@@ -7,11 +7,12 @@ use crate::{
     commands,
     error::ContractError,
     queries,
-    state::{load_config, save_config, save_state, State},
+    state::{load_config, save_config, save_state, RewardState, State},
 };
 use crate::{state::Config, ContractResult};
 use nexus_prism_protocol::staking::{
-    AnyoneMsg, ExecuteMsg, GovernanceMsg, InstantiateMsg, MigrateMsg, QueryMsg, TokenMsg,
+    AnyoneMsg, ExecuteMsg, GovernanceMsg, InstantiateMsg, MigrateMsg, OwnerMsg, QueryMsg,
+    RewarderMsg,
 };
 
 #[entry_point]
@@ -22,22 +23,35 @@ pub fn instantiate(
     msg: InstantiateMsg,
 ) -> ContractResult<Response> {
     let config = Config {
-        psi_token: deps.api.addr_validate(&msg.psi_token_addr)?,
-        nasset_token: deps.api.addr_validate(&msg.nasset_token_addr)?,
-        governance_contract: deps.api.addr_validate(&msg.governance_contract_addr)?,
+        owner: msg
+            .owner
+            .map(|addr| deps.api.addr_validate(&addr))
+            .transpose()?,
+        staking_token: deps.api.addr_validate(&msg.staking_token)?,
+        rewarder: deps.api.addr_validate(&msg.rewarder)?,
+        reward_token: deps.api.addr_validate(&msg.reward_token)?,
+        staker_reward_pair: deps.api.addr_validate(&msg.staker_reward_pair)?,
+        governance: deps.api.addr_validate(&msg.governance)?,
     };
 
     save_config(deps.storage, &config)?;
     save_state(
         deps.storage,
         &State {
-            global_index: Decimal::zero(),
-            total_balance: Uint128::zero(),
-            prev_reward_balance: Uint128::zero(),
+            staking_total_balance: Uint128::zero(),
+            virtual_reward_balance: Uint128::zero(),
+            virtual_rewards: RewardState {
+                global_index: Decimal::zero(),
+                prev_balance: Uint128::zero(),
+            },
+            real_rewards: RewardState {
+                global_index: Decimal::zero(),
+                prev_balance: Uint128::zero(),
+            },
         },
     )?;
 
-    Ok(Response::default())
+    Ok(Response::new().add_attribute("action", "instantiate"))
 }
 
 #[entry_point]
@@ -48,7 +62,11 @@ pub fn execute(
     msg: ExecuteMsg,
 ) -> ContractResult<Response> {
     match msg {
+        ExecuteMsg::Receive(msg) => commands::receive_cw20(deps, env, info, msg),
+
         ExecuteMsg::Anyone { anyone_msg } => match anyone_msg {
+            AnyoneMsg::Unbond { amount } => commands::unbond(deps, env, info, amount),
+
             AnyoneMsg::UpdateGlobalIndex {} => commands::update_global_index(deps, env),
 
             AnyoneMsg::ClaimRewards { recipient } => {
@@ -62,38 +80,57 @@ pub fn execute(
             AnyoneMsg::AcceptGovernance {} => commands::accept_governance(deps, env, info),
         },
 
-        ExecuteMsg::Token { token_msg } => {
+        ExecuteMsg::Owner { msg } => {
             let config = load_config(deps.storage)?;
-            if info.sender != config.nasset_token {
+
+            if Some(info.sender) != config.owner {
                 return Err(ContractError::Unauthorized);
             }
 
-            match token_msg {
-                TokenMsg::IncreaseBalance { address, amount } => {
+            match msg {
+                OwnerMsg::IncreaseBalance { address, amount } => {
                     commands::increase_balance(deps, env, &config, address, amount)
                 }
 
-                TokenMsg::DecreaseBalance { address, amount } => {
+                OwnerMsg::DecreaseBalance { address, amount } => {
                     commands::decrease_balance(deps, env, &config, address, amount)
                 }
             }
         }
 
+        ExecuteMsg::Rewarder { msg } => {
+            let config = load_config(deps.storage)?;
+
+            if info.sender != config.rewarder {
+                return Err(ContractError::Unauthorized);
+            }
+
+            match msg {
+                RewarderMsg::Reward { amount } => commands::reward(deps, amount),
+            }
+        }
+
         ExecuteMsg::Governance { governance_msg } => {
             let config = load_config(deps.storage)?;
-            if info.sender != config.governance_contract {
+            if info.sender != config.governance {
                 return Err(ContractError::Unauthorized);
             }
 
             match governance_msg {
                 GovernanceMsg::UpdateConfig {
-                    psi_token_contract_addr,
-                    nasset_token_contract_addr,
+                    owner,
+                    staking_token,
+                    rewarder,
+                    reward_token,
+                    staker_reward_pair,
                 } => commands::update_config(
                     deps,
                     config,
-                    psi_token_contract_addr,
-                    nasset_token_contract_addr,
+                    owner,
+                    staking_token,
+                    rewarder,
+                    reward_token,
+                    staker_reward_pair,
                 ),
 
                 GovernanceMsg::UpdateGovernanceContract {
@@ -114,20 +151,12 @@ pub fn execute(
 pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
     match msg {
         QueryMsg::Config {} => to_binary(&queries::query_config(deps)?),
-        QueryMsg::State {} => to_binary(&queries::query_state(deps)?),
-        QueryMsg::AccruedRewards { address } => {
-            to_binary(&queries::query_accrued_rewards(deps, address)?)
-        }
-        QueryMsg::Holder { address } => to_binary(&queries::query_holder(deps, env, address)?),
-        QueryMsg::Holders {
-            start_after,
-            limit,
-            order_by,
-        } => to_binary(&queries::query_holders(deps, start_after, limit, order_by)?),
+        QueryMsg::Rewards { address } => to_binary(&queries::query_rewards(deps, address)?),
+        QueryMsg::Staker { address } => to_binary(&queries::query_staker(deps, env, address)?),
     }
 }
 
 #[entry_point]
 pub fn migrate(_deps: DepsMut, _env: Env, _msg: MigrateMsg) -> StdResult<Response> {
-    Ok(Response::default())
+    Ok(Response::new())
 }

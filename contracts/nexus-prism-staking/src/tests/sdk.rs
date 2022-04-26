@@ -9,11 +9,12 @@ use cosmwasm_std::{
 use cosmwasm_std::{Empty, Response, Uint128};
 
 use nexus_prism_protocol::staking::{
-    AnyoneMsg, ExecuteMsg, HolderResponse, InstantiateMsg, QueryMsg, TokenMsg,
+    AnyoneMsg, ExecuteMsg, HolderResponse, InstantiateMsg, OwnerMsg, QueryMsg,
 };
 
 use super::WasmMockQuerier;
 
+pub const OWNER: &str = "addr0000";
 pub const PSI_TOKEN_ADDR: &str = "addr0001";
 pub const NASSET_TOKEN_ADDR: &str = "addr0002";
 pub const GOVERNANCE_CONTRACT_ADDR: &str = "addr0003";
@@ -25,9 +26,10 @@ pub struct Sdk {
 impl Sdk {
     pub fn init() -> Self {
         let msg = InstantiateMsg {
-            psi_token_addr: PSI_TOKEN_ADDR.to_string(),
-            nasset_token_addr: NASSET_TOKEN_ADDR.to_string(),
-            governance_contract_addr: GOVERNANCE_CONTRACT_ADDR.to_string(),
+            owner: Some(OWNER.to_owned()),
+            staking_token: PSI_TOKEN_ADDR.to_string(),
+            reward_token: NASSET_TOKEN_ADDR.to_string(),
+            governance: GOVERNANCE_CONTRACT_ADDR.to_string(),
         };
 
         let mut deps = mock_dependencies(&[]);
@@ -47,7 +49,7 @@ impl Sdk {
     }
 
     pub fn increase_user_balance(&mut self, user_addr: &Addr, deposit_amount: Uint128) {
-        let user_increase_balance = TokenMsg::IncreaseBalance {
+        let user_increase_balance = OwnerMsg::IncreaseBalance {
             address: user_addr.to_string(),
             amount: deposit_amount,
         };
@@ -57,15 +59,15 @@ impl Sdk {
             self.deps.as_mut(),
             mock_env(),
             info,
-            ExecuteMsg::Token {
-                token_msg: user_increase_balance,
+            ExecuteMsg::Owner {
+                msg: user_increase_balance,
             },
         );
         assert!(res.is_ok());
     }
 
     pub fn decrease_user_balance(&mut self, user_addr: &Addr, withdraw_amount: Uint128) {
-        let decrease_balance_msg = TokenMsg::DecreaseBalance {
+        let decrease_balance_msg = OwnerMsg::DecreaseBalance {
             address: user_addr.to_string(),
             amount: withdraw_amount,
         };
@@ -75,8 +77,8 @@ impl Sdk {
             self.deps.as_mut(),
             mock_env(),
             info,
-            ExecuteMsg::Token {
-                token_msg: decrease_balance_msg,
+            ExecuteMsg::Owner {
+                msg: decrease_balance_msg,
             },
         );
         assert!(res.is_ok());
@@ -118,7 +120,7 @@ impl Sdk {
         let holder_query_res = query(
             self.deps.as_ref(),
             mock_env(),
-            QueryMsg::Holder {
+            QueryMsg::Staker {
                 address: holder.to_string(),
             },
         )

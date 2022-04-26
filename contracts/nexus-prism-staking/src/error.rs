@@ -1,4 +1,4 @@
-use cosmwasm_std::{OverflowError, StdError};
+use cosmwasm_std::{OverflowError, StdError, Uint128};
 use thiserror::Error;
 
 #[derive(Error, Debug, PartialEq)]
@@ -6,17 +6,30 @@ pub enum ContractError {
     #[error("{0}")]
     Std(#[from] StdError),
 
-    #[error("Unauthorized")]
+    #[error("unauthorized")]
     Unauthorized,
 
-    #[error("Impossible: {0}")]
+    #[error("impossible: {0}")]
     Impossible(String),
 
-    #[error("Overflow: {source}")]
+    #[error("overflow: {source}")]
     Overflow {
         source: OverflowError,
         #[cfg(feature = "backtraces")]
         backtrace: Backtrace,
+    },
+
+    #[error("no stakers")]
+    NoStakers {},
+
+    #[error("no rewards")]
+    NoRewards {},
+
+    #[error("not enough {name} tokens: {value}, but {required} required")]
+    NotEnoughTokens {
+        name: String,
+        value: Uint128,
+        required: Uint128,
     },
 }
 
@@ -36,16 +49,8 @@ impl From<OverflowError> for ContractError {
     }
 }
 
-//need it only for 'query_holder' function
 impl From<ContractError> for StdError {
-    fn from(val: ContractError) -> Self {
-        match val {
-            ContractError::Std(std) => std,
-            ContractError::Unauthorized => StdError::generic_err("unauthorized"),
-            ContractError::Impossible(msg) => {
-                StdError::generic_err(format!("impossible case, message: '{}'", msg))
-            }
-            ContractError::Overflow { .. } => StdError::generic_err("calculations overflow"),
-        }
+    fn from(e: ContractError) -> Self {
+        StdError::generic_err(e.to_string())
     }
 }

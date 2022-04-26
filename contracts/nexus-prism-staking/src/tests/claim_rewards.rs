@@ -2,7 +2,7 @@ use super::sdk::Sdk;
 use crate::tests::sdk::PSI_TOKEN_ADDR;
 use crate::{
     error::ContractError,
-    state::{load_holder, load_state},
+    state::{load_staker, load_state},
 };
 use cosmwasm_std::{to_binary, SubMsg, Uint128};
 use cosmwasm_std::{Addr, CosmosMsg, Decimal, StdError, WasmMsg};
@@ -24,10 +24,10 @@ fn increase_balance_and_claim_rewards() {
     let deposit_1_amount: Uint128 = 100u128.into();
     {
         sdk.increase_user_balance(&user_1_address, deposit_1_amount);
-        let holder_state = load_holder(&sdk.deps.storage, &user_1_address).unwrap();
+        let holder_state = load_staker(&sdk.deps.storage, &user_1_address).unwrap();
         assert_eq!(deposit_1_amount, holder_state.balance);
-        assert_eq!(Decimal::zero(), holder_state.index);
-        assert_eq!(Decimal::zero(), holder_state.pending_rewards);
+        assert_eq!(Decimal::zero(), holder_state.real_index);
+        assert_eq!(Decimal::zero(), holder_state.real_pending_rewards);
 
         sdk.query_holder_state(
             &user_1_address,
@@ -74,14 +74,14 @@ fn increase_balance_and_claim_rewards() {
             }))]
         );
 
-        let holder = load_holder(&sdk.deps.storage, &user_1_address).unwrap();
+        let holder = load_staker(&sdk.deps.storage, &user_1_address).unwrap();
         assert_eq!(deposit_1_amount, holder.balance);
-        assert_eq!(Decimal::from_str("60").unwrap(), holder.index);
-        assert_eq!(Decimal::zero(), holder.pending_rewards);
+        assert_eq!(Decimal::from_str("60").unwrap(), holder.real_index);
+        assert_eq!(Decimal::zero(), holder.real_pending_rewards);
 
         let state = load_state(&sdk.deps.storage).unwrap();
         assert_eq!(Decimal::from_str("60").unwrap(), state.global_index);
-        assert_eq!(deposit_1_amount, state.total_balance);
+        assert_eq!(deposit_1_amount, state.staking_total_balance);
         assert_eq!(Uint128::zero(), state.prev_reward_balance);
 
         sdk.query_holder_state(
@@ -109,10 +109,10 @@ fn claim_zero_rewards() {
     let deposit_1_amount: Uint128 = 100u128.into();
     {
         sdk.increase_user_balance(&user_1_address, deposit_1_amount);
-        let holder_state = load_holder(&sdk.deps.storage, &user_1_address).unwrap();
+        let holder_state = load_staker(&sdk.deps.storage, &user_1_address).unwrap();
         assert_eq!(deposit_1_amount, holder_state.balance);
-        assert_eq!(Decimal::zero(), holder_state.index);
-        assert_eq!(Decimal::zero(), holder_state.pending_rewards);
+        assert_eq!(Decimal::zero(), holder_state.real_index);
+        assert_eq!(Decimal::zero(), holder_state.real_pending_rewards);
     }
 
     //===============================================================================
@@ -129,14 +129,14 @@ fn claim_zero_rewards() {
             panic!("wrong error type");
         };
 
-        let holder = load_holder(&sdk.deps.storage, &user_1_address).unwrap();
+        let holder = load_staker(&sdk.deps.storage, &user_1_address).unwrap();
         assert_eq!(deposit_1_amount, holder.balance);
-        assert_eq!(Decimal::zero(), holder.index);
-        assert_eq!(Decimal::zero(), holder.pending_rewards);
+        assert_eq!(Decimal::zero(), holder.real_index);
+        assert_eq!(Decimal::zero(), holder.real_pending_rewards);
 
         let state = load_state(&sdk.deps.storage).unwrap();
         assert_eq!(Decimal::zero(), state.global_index);
-        assert_eq!(deposit_1_amount, state.total_balance);
+        assert_eq!(deposit_1_amount, state.staking_total_balance);
         assert_eq!(Uint128::zero(), state.prev_reward_balance);
     }
     //===============================================================================
@@ -158,10 +158,10 @@ fn second_user_comes_after_rewards_already_there() {
     let deposit_1_amount: Uint128 = 100u128.into();
     {
         sdk.increase_user_balance(&user_1_address, deposit_1_amount);
-        let holder_state = load_holder(&sdk.deps.storage, &user_1_address).unwrap();
+        let holder_state = load_staker(&sdk.deps.storage, &user_1_address).unwrap();
         assert_eq!(deposit_1_amount, holder_state.balance);
-        assert_eq!(Decimal::zero(), holder_state.index);
-        assert_eq!(Decimal::zero(), holder_state.pending_rewards);
+        assert_eq!(Decimal::zero(), holder_state.real_index);
+        assert_eq!(Decimal::zero(), holder_state.real_pending_rewards);
     }
 
     //===============================================================================
@@ -171,10 +171,10 @@ fn second_user_comes_after_rewards_already_there() {
     let deposit_2_amount: Uint128 = 300u128.into();
     {
         sdk.increase_user_balance(&user_2_address, deposit_2_amount);
-        let holder_state = load_holder(&sdk.deps.storage, &user_2_address).unwrap();
+        let holder_state = load_staker(&sdk.deps.storage, &user_2_address).unwrap();
         assert_eq!(deposit_2_amount, holder_state.balance);
-        assert_eq!(Decimal::from_str("10").unwrap(), holder_state.index);
-        assert_eq!(Decimal::zero(), holder_state.pending_rewards);
+        assert_eq!(Decimal::from_str("10").unwrap(), holder_state.real_index);
+        assert_eq!(Decimal::zero(), holder_state.real_pending_rewards);
     }
 
     //===============================================================================
@@ -206,14 +206,17 @@ fn second_user_comes_after_rewards_already_there() {
 
         //22.5 comes from: (first_user_reward / first_balance) + new_rewards / total_balance
         //so, 1000 / 100 + 5000 / 400
-        let holder = load_holder(&sdk.deps.storage, &user_1_address).unwrap();
+        let holder = load_staker(&sdk.deps.storage, &user_1_address).unwrap();
         assert_eq!(deposit_1_amount, holder.balance);
-        assert_eq!(Decimal::from_str("22.5").unwrap(), holder.index);
-        assert_eq!(Decimal::zero(), holder.pending_rewards);
+        assert_eq!(Decimal::from_str("22.5").unwrap(), holder.real_index);
+        assert_eq!(Decimal::zero(), holder.real_pending_rewards);
 
         let state = load_state(&sdk.deps.storage).unwrap();
         assert_eq!(Decimal::from_str("22.5").unwrap(), state.global_index);
-        assert_eq!(deposit_1_amount + deposit_2_amount, state.total_balance);
+        assert_eq!(
+            deposit_1_amount + deposit_2_amount,
+            state.staking_total_balance
+        );
         assert_eq!(Uint128::new(3750), state.prev_reward_balance);
     }
 
@@ -245,14 +248,17 @@ fn second_user_comes_after_rewards_already_there() {
             }))]
         );
 
-        let holder = load_holder(&sdk.deps.storage, &user_2_address).unwrap();
+        let holder = load_staker(&sdk.deps.storage, &user_2_address).unwrap();
         assert_eq!(deposit_2_amount, holder.balance);
-        assert_eq!(Decimal::from_str("22.5").unwrap(), holder.index);
-        assert_eq!(Decimal::zero(), holder.pending_rewards);
+        assert_eq!(Decimal::from_str("22.5").unwrap(), holder.real_index);
+        assert_eq!(Decimal::zero(), holder.real_pending_rewards);
 
         let state = load_state(&sdk.deps.storage).unwrap();
         assert_eq!(Decimal::from_str("22.5").unwrap(), state.global_index);
-        assert_eq!(deposit_1_amount + deposit_2_amount, state.total_balance);
+        assert_eq!(
+            deposit_1_amount + deposit_2_amount,
+            state.staking_total_balance
+        );
         assert_eq!(Uint128::zero(), state.prev_reward_balance);
     }
     //===============================================================================
@@ -270,10 +276,10 @@ fn two_users_hold_partially_unhold_and_hold_again() {
     let deposit_1_amount: Uint128 = 100u128.into();
     {
         sdk.increase_user_balance(&user_1_address, deposit_1_amount);
-        let holder_state = load_holder(&sdk.deps.storage, &user_1_address).unwrap();
+        let holder_state = load_staker(&sdk.deps.storage, &user_1_address).unwrap();
         assert_eq!(deposit_1_amount, holder_state.balance);
-        assert_eq!(Decimal::zero(), holder_state.index);
-        assert_eq!(Decimal::zero(), holder_state.pending_rewards);
+        assert_eq!(Decimal::zero(), holder_state.real_index);
+        assert_eq!(Decimal::zero(), holder_state.real_pending_rewards);
     }
 
     //===============================================================================
@@ -282,10 +288,10 @@ fn two_users_hold_partially_unhold_and_hold_again() {
     let deposit_2_amount: Uint128 = 300u128.into();
     {
         sdk.increase_user_balance(&user_2_address, deposit_2_amount);
-        let holder_state = load_holder(&sdk.deps.storage, &user_2_address).unwrap();
+        let holder_state = load_staker(&sdk.deps.storage, &user_2_address).unwrap();
         assert_eq!(deposit_2_amount, holder_state.balance);
-        assert_eq!(Decimal::zero(), holder_state.index);
-        assert_eq!(Decimal::zero(), holder_state.pending_rewards);
+        assert_eq!(Decimal::zero(), holder_state.real_index);
+        assert_eq!(Decimal::zero(), holder_state.real_pending_rewards);
     }
 
     //===============================================================================
@@ -301,16 +307,16 @@ fn two_users_hold_partially_unhold_and_hold_again() {
 
     // 1/4(total stake share) * 1000 (psi balance)
     let rewards_1_amount = Uint128::from(250u64);
-    let holder_state = load_holder(&sdk.deps.storage, &user_1_address).unwrap();
+    let holder_state = load_staker(&sdk.deps.storage, &user_1_address).unwrap();
     assert_eq!(
         deposit_1_amount.checked_sub(withdraw_1_amount).unwrap(),
         holder_state.balance
     );
-    assert_eq!(Decimal::from_str("2.5").unwrap(), holder_state.index);
+    assert_eq!(Decimal::from_str("2.5").unwrap(), holder_state.real_index);
     //it is 'rewards_1_amount'
     assert_eq!(
         Decimal::from_str("250").unwrap(),
-        holder_state.pending_rewards
+        holder_state.real_pending_rewards
     );
 
     let state = load_state(&sdk.deps.storage).unwrap();
@@ -319,7 +325,7 @@ fn two_users_hold_partially_unhold_and_hold_again() {
         (deposit_1_amount + deposit_2_amount)
             .checked_sub(withdraw_1_amount)
             .unwrap(),
-        state.total_balance
+        state.staking_total_balance
     );
     assert_eq!(new_rewards_amount, state.prev_reward_balance);
 
@@ -342,8 +348,8 @@ fn two_users_hold_partially_unhold_and_hold_again() {
             }))]
         );
 
-        let holder = load_holder(&sdk.deps.storage, &user_1_address).unwrap();
-        assert_eq!(Decimal::zero(), holder.pending_rewards);
+        let holder = load_staker(&sdk.deps.storage, &user_1_address).unwrap();
+        assert_eq!(Decimal::zero(), holder.real_pending_rewards);
 
         let state = load_state(&sdk.deps.storage).unwrap();
         assert_eq!(
@@ -365,16 +371,16 @@ fn two_users_hold_partially_unhold_and_hold_again() {
 
     // 1/4(total stake share) * 1000 (dep1+ dep2)
     let rewards_2_amount = Uint128::from(750u64);
-    let holder_state = load_holder(&sdk.deps.storage, &user_2_address).unwrap();
+    let holder_state = load_staker(&sdk.deps.storage, &user_2_address).unwrap();
     assert_eq!(
         deposit_2_amount.checked_sub(withdraw_2_amount).unwrap(),
         holder_state.balance
     );
-    assert_eq!(Decimal::from_str("2.5").unwrap(), holder_state.index);
+    assert_eq!(Decimal::from_str("2.5").unwrap(), holder_state.real_index);
     //it is 'rewards_2_amount'
     assert_eq!(
         Decimal::from_str("750").unwrap(),
-        holder_state.pending_rewards
+        holder_state.real_pending_rewards
     );
 
     let state = load_state(&sdk.deps.storage).unwrap();
@@ -385,7 +391,7 @@ fn two_users_hold_partially_unhold_and_hold_again() {
             .unwrap()
             .checked_sub(withdraw_2_amount)
             .unwrap(),
-        state.total_balance
+        state.staking_total_balance
     );
     assert_eq!(
         new_rewards_amount.checked_sub(rewards_1_amount).unwrap(),
@@ -411,8 +417,8 @@ fn two_users_hold_partially_unhold_and_hold_again() {
             }))]
         );
 
-        let holder = load_holder(&sdk.deps.storage, &user_2_address).unwrap();
-        assert_eq!(Decimal::zero(), holder.pending_rewards);
+        let holder = load_staker(&sdk.deps.storage, &user_2_address).unwrap();
+        assert_eq!(Decimal::zero(), holder.real_pending_rewards);
 
         let state = load_state(&sdk.deps.storage).unwrap();
         assert_eq!(Uint128::zero(), state.prev_reward_balance);
@@ -429,15 +435,15 @@ fn two_users_hold_partially_unhold_and_hold_again() {
     let second_deposit_1_amount = Uint128::from(130u64);
     {
         sdk.increase_user_balance(&user_1_address, second_deposit_1_amount);
-        let holder_state = load_holder(&sdk.deps.storage, &user_1_address).unwrap();
+        let holder_state = load_staker(&sdk.deps.storage, &user_1_address).unwrap();
         assert_eq!(
             (deposit_1_amount + second_deposit_1_amount)
                 .checked_sub(withdraw_1_amount)
                 .unwrap(),
             holder_state.balance
         );
-        assert_eq!(Decimal::from_str("2.5").unwrap(), holder_state.index);
-        assert_eq!(Decimal::zero(), holder_state.pending_rewards);
+        assert_eq!(Decimal::from_str("2.5").unwrap(), holder_state.real_index);
+        assert_eq!(Decimal::zero(), holder_state.real_pending_rewards);
 
         let state = load_state(&sdk.deps.storage).unwrap();
         assert_eq!(Decimal::from_str("2.5").unwrap(), state.global_index);
@@ -447,7 +453,7 @@ fn two_users_hold_partially_unhold_and_hold_again() {
                 .unwrap()
                 .checked_sub(withdraw_2_amount)
                 .unwrap(),
-            state.total_balance
+            state.staking_total_balance
         );
         assert_eq!(Uint128::zero(), state.prev_reward_balance);
     }
@@ -466,7 +472,7 @@ fn increase_balance_should_update_index() {
 
     let state = load_state(&sdk.deps.storage).unwrap();
     assert_eq!(Decimal::zero(), state.global_index);
-    assert_eq!(Uint128::zero(), state.total_balance);
+    assert_eq!(Uint128::zero(), state.staking_total_balance);
     assert_eq!(Uint128::zero(), state.prev_reward_balance);
 
     //===============================================================================
@@ -475,14 +481,14 @@ fn increase_balance_should_update_index() {
 
     let deposit_amount: Uint128 = 100u128.into();
     sdk.increase_user_balance(&user_address, deposit_amount);
-    let holder_state = load_holder(&sdk.deps.storage, &user_address).unwrap();
+    let holder_state = load_staker(&sdk.deps.storage, &user_address).unwrap();
     assert_eq!(deposit_amount, holder_state.balance);
-    assert_eq!(Decimal::zero(), holder_state.index);
-    assert_eq!(Decimal::zero(), holder_state.pending_rewards);
+    assert_eq!(Decimal::zero(), holder_state.real_index);
+    assert_eq!(Decimal::zero(), holder_state.real_pending_rewards);
 
     let state = load_state(&sdk.deps.storage).unwrap();
     assert_eq!(Decimal::from_str("10").unwrap(), state.global_index);
-    assert_eq!(deposit_amount, state.total_balance);
+    assert_eq!(deposit_amount, state.staking_total_balance);
     assert_eq!(rewards, state.prev_reward_balance);
     //===============================================================================
 }
@@ -500,10 +506,10 @@ fn decrease_balance_should_update_index() {
 
     let deposit_amount: Uint128 = 100u128.into();
     sdk.increase_user_balance(&user_address, deposit_amount);
-    let holder_state = load_holder(&sdk.deps.storage, &user_address).unwrap();
+    let holder_state = load_staker(&sdk.deps.storage, &user_address).unwrap();
     assert_eq!(deposit_amount, holder_state.balance);
-    assert_eq!(Decimal::zero(), holder_state.index);
-    assert_eq!(Decimal::zero(), holder_state.pending_rewards);
+    assert_eq!(Decimal::zero(), holder_state.real_index);
+    assert_eq!(Decimal::zero(), holder_state.real_pending_rewards);
     //===============================================================================
 
     //rewards coming
@@ -516,17 +522,17 @@ fn decrease_balance_should_update_index() {
 
     let withdraw_amount: Uint128 = 50u128.into();
     sdk.decrease_user_balance(&user_address, withdraw_amount);
-    let holder_state = load_holder(&sdk.deps.storage, &user_address).unwrap();
+    let holder_state = load_staker(&sdk.deps.storage, &user_address).unwrap();
     assert_eq!(Uint128::new(50), holder_state.balance);
-    assert_eq!(Decimal::from_str("10").unwrap(), holder_state.index);
+    assert_eq!(Decimal::from_str("10").unwrap(), holder_state.real_index);
     assert_eq!(
         Decimal::from_str("1000").unwrap(),
-        holder_state.pending_rewards
+        holder_state.real_pending_rewards
     );
 
     let state = load_state(&sdk.deps.storage).unwrap();
     assert_eq!(Decimal::from_str("10").unwrap(), state.global_index);
-    assert_eq!(Uint128::new(50), state.total_balance);
+    assert_eq!(Uint128::new(50), state.staking_total_balance);
     assert_eq!(rewards, state.prev_reward_balance);
     //===============================================================================
 }

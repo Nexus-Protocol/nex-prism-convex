@@ -5,23 +5,35 @@ use cosmwasm_std::{Addr, Decimal, StdResult, Storage, Uint128};
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct Config {
-    pub psi_token: Addr,
-    pub nasset_token: Addr,
-    pub governance_contract: Addr,
+    pub owner: Option<Addr>,
+    pub staking_token: Addr,
+    pub rewarder: Addr,
+    pub reward_token: Addr,
+    pub staker_reward_pair: Addr,
+    pub governance: Addr,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct State {
+    pub staking_total_balance: Uint128,
+    pub virtual_reward_balance: Uint128,
+    pub virtual_rewards: RewardState,
+    pub real_rewards: RewardState,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct RewardState {
     pub global_index: Decimal,
-    pub total_balance: Uint128,
-    pub prev_reward_balance: Uint128,
+    pub prev_balance: Uint128,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Default)]
-pub struct Holder {
+pub struct Staker {
     pub balance: Uint128,
-    pub index: Decimal,
-    pub pending_rewards: Decimal,
+    pub real_index: Decimal,
+    pub real_pending_rewards: Decimal,
+    pub virtual_index: Decimal,
+    pub virtual_pending_rewards: Decimal,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -33,7 +45,7 @@ pub struct GovernanceUpdateState {
 static KEY_CONFIG: Item<Config> = Item::new("config");
 static KEY_STATE: Item<State> = Item::new("state");
 static KEY_GOVERNANCE_UPDATE: Item<GovernanceUpdateState> = Item::new("gov_update");
-pub(crate) static HOLDERS: Map<&Addr, Holder> = Map::new("state");
+pub(crate) static HOLDERS: Map<&Addr, Staker> = Map::new("state");
 
 pub fn load_state(storage: &dyn Storage) -> StdResult<State> {
     KEY_STATE.load(storage)
@@ -51,13 +63,13 @@ pub fn save_config(storage: &mut dyn Storage, config: &Config) -> StdResult<()> 
     KEY_CONFIG.save(storage, config)
 }
 
-pub fn load_holder(storage: &dyn Storage, addr: &Addr) -> StdResult<Holder> {
+pub fn load_staker(storage: &dyn Storage, addr: &Addr) -> StdResult<Staker> {
     HOLDERS
         .may_load(storage, addr)
         .map(|res| res.unwrap_or_default())
 }
 
-pub fn save_holder(storage: &mut dyn Storage, addr: &Addr, holder: &Holder) -> StdResult<()> {
+pub fn save_staker(storage: &mut dyn Storage, addr: &Addr, holder: &Staker) -> StdResult<()> {
     HOLDERS.save(storage, addr, holder)
 }
 

@@ -1,63 +1,141 @@
+use std::cmp::min;
+
 use cosmwasm_std::{
-    to_binary, Addr, BlockInfo, Decimal, Deps, DepsMut, Env, MessageInfo, Response, StdError,
-    Uint128, WasmMsg,
+    from_binary, to_binary, Addr, BlockInfo, Decimal, DepsMut, Env, MessageInfo, Response,
+    StdError, Uint128, WasmMsg,
 };
-use nexus_prism_protocol::common::query_token_balance;
+use cw_asset::Asset;
+use nexus_prism_protocol::{common::query_token_balance, staking::Cw20HookMsg};
 
 use crate::{
     error::ContractError,
     math::decimal_summation_in_256,
     state::{
-        load_config, load_gov_update, load_holder, load_state, remove_gov_update, save_config,
-        save_gov_update, save_state, Config, GovernanceUpdateState, Holder, State,
+        load_config, load_gov_update, load_staker, load_state, remove_gov_update, save_config,
+        save_gov_update, save_state, Config, GovernanceUpdateState, RewardState, Staker, State,
     },
     ContractResult,
 };
 use crate::{
-    state::save_holder,
+    state::save_staker,
     utils::{calculate_decimal_rewards, get_decimals},
 };
-use cw20::Cw20ExecuteMsg;
+use cw20::{Cw20ExecuteMsg, Cw20ReceiveMsg};
+
+pub fn receive_cw20(
+    deps: DepsMut,
+    env: Env,
+    info: MessageInfo,
+    cw20_msg: Cw20ReceiveMsg,
+) -> Result<Response, ContractError> {
+    let config = load_config(deps.storage)?;
+
+    if config.owner.is_some() || info.sender != config.staking_token {
+        return Err(ContractError::Unauthorized);
+    }
+
+    match from_binary(&cw20_msg.msg) {
+        Ok(Cw20HookMsg::Bond {}) => {
+            increase_balance(deps, env, &config, cw20_msg.sender, cw20_msg.amount)
+        }
+        Err(err) => Err(ContractError::Std(err)),
+    }
+}
+
+pub fn unbond(
+    deps: DepsMut,
+    env: Env,
+    info: MessageInfo,
+    amount: Uint128,
+) -> Result<Response, ContractError> {
+    let config = load_config(deps.storage)?;
+
+    if config.owner.is_some() {
+        return Err(ContractError::Unauthorized);
+    }
+
+    Ok(
+        decrease_balance(deps, env, &config, info.sender.to_string(), amount)?.add_message(
+            WasmMsg::Execute {
+                contract_addr: config.staking_token.to_string(),
+                funds: vec![],
+                msg: to_binary(&Cw20ExecuteMsg::Transfer {
+                    recipient: info.sender.to_string(),
+                    amount,
+                })?,
+            },
+        ),
+    )
+}
 
 pub fn update_config(
     deps: DepsMut,
-    mut current_config: Config,
-    psi_token: Option<String>,
-    nasset_token: Option<String>,
+    mut config: Config,
+    owner: Option<String>,
+    staking_token: Option<String>,
+    rewarder: Option<String>,
+    reward_token: Option<String>,
+    staker_reward_pair: Option<String>,
 ) -> ContractResult<Response> {
-    if let Some(ref psi_token) = psi_token {
-        current_config.psi_token = deps.api.addr_validate(psi_token)?;
+    if let Some(owner) = owner {
+        config.owner = if owner.is_empty() {
+            None
+        } else {
+            Some(deps.api.addr_validate(&owner)?)
+        };
     }
 
-    if let Some(ref nasset_token) = nasset_token {
-        current_config.nasset_token = deps.api.addr_validate(nasset_token)?;
+    if let Some(staking_token) = staking_token {
+        config.staking_token = deps.api.addr_validate(&staking_token)?;
     }
 
-    save_config(deps.storage, &current_config)?;
-    Ok(Response::default())
+    if let Some(rewarder) = rewarder {
+        config.rewarder = deps.api.addr_validate(&rewarder)?;
+    }
+
+    if let Some(reward_token) = reward_token {
+        config.reward_token = deps.api.addr_validate(&reward_token)?;
+    }
+
+    if let Some(staker_reward_pair) = staker_reward_pair {
+        config.staker_reward_pair = deps.api.addr_validate(&staker_reward_pair)?;
+    }
+
+    save_config(deps.storage, &config)?;
+
+    Ok(Response::new().add_attribute("action", "update_config"))
 }
 
 pub fn update_global_index(deps: DepsMut, env: Env) -> ContractResult<Response> {
     let mut state: State = load_state(deps.storage)?;
 
-    // Zero nasset balance check
-    if state.total_balance.is_zero() {
-        return Err(StdError::generic_err("nAsset balance is zero").into());
+    if state.staking_total_balance.is_zero() {
+        return Err(ContractError::NoStakers {});
     }
 
     let config = load_config(deps.storage)?;
 
-    let claimed_rewards = calculate_global_index(deps.as_ref(), env, &config, &mut state)?;
-    if claimed_rewards.is_zero() {
-        return Err(StdError::generic_err("No rewards have accrued yet").into());
+    let virtual_claimed_rewards = calculate_global_index(
+        state.virtual_reward_balance,
+        state.staking_total_balance,
+        &mut state.virtual_rewards,
+    )?;
+    let real_claimed_rewards = calculate_global_index(
+        query_token_balance(deps.as_ref(), &config.reward_token, &env.contract.address),
+        state.staking_total_balance,
+        &mut state.real_rewards,
+    )?;
+
+    if virtual_claimed_rewards.is_zero() && real_claimed_rewards.is_zero() {
+        return Err(ContractError::NoRewards {});
     }
 
     save_state(deps.storage, &state)?;
 
-    Ok(Response::new().add_attributes(vec![
-        ("action", "update_global_index"),
-        ("claimed_rewards", &claimed_rewards.to_string()),
-    ]))
+    Ok(Response::new()
+        .add_attribute("action", "update_global_index")
+        .add_attribute("real_claimed_rewards", real_claimed_rewards)
+        .add_attribute("virtual_claimed_rewards", virtual_claimed_rewards))
 }
 
 pub fn update_governance_addr(
@@ -72,7 +150,7 @@ pub fn update_governance_addr(
         wait_approve_until: current_time + seconds_to_wait_for_accept_gov_tx,
     };
     save_gov_update(deps.storage, &gov_update)?;
-    Ok(Response::default())
+    Ok(Response::new().add_attribute("action", "update_governance_addr"))
 }
 
 pub fn accept_governance(deps: DepsMut, env: Env, info: MessageInfo) -> ContractResult<Response> {
@@ -90,39 +168,31 @@ pub fn accept_governance(deps: DepsMut, env: Env, info: MessageInfo) -> Contract
     let new_gov_add_str = gov_update.new_governance_contract_addr.to_string();
 
     let mut config = load_config(deps.storage)?;
-    config.governance_contract = gov_update.new_governance_contract_addr;
+    config.governance = gov_update.new_governance_contract_addr;
     save_config(deps.storage, &config)?;
     remove_gov_update(deps.storage);
 
-    Ok(Response::default().add_attributes(vec![
-        ("action", "change_governance_contract"),
-        ("new_address", &new_gov_add_str),
-    ]))
+    Ok(Response::new()
+        .add_attribute("action", "change_governance_contract")
+        .add_attribute("new_address", &new_gov_add_str))
 }
 
 pub fn calculate_global_index(
-    deps: Deps,
-    env: Env,
-    config: &Config,
-    state: &mut State,
+    reward_token_balance: Uint128,
+    staking_token_balance_total: Uint128,
+    reward_state: &mut RewardState,
 ) -> ContractResult<Uint128> {
-    let balance = query_token_balance(deps, &config.psi_token, &env.contract.address);
+    let claimed_rewards = reward_token_balance.checked_sub(reward_state.prev_balance)?;
 
-    let previous_balance = state.prev_reward_balance;
-
-    // claimed_rewards = current_balance - prev_balance;
-    let claimed_rewards = balance.checked_sub(previous_balance)?;
-
-    if claimed_rewards.is_zero() || state.total_balance.is_zero() {
+    if staking_token_balance_total.is_zero() {
         return Ok(claimed_rewards);
     }
 
-    state.prev_reward_balance = balance;
+    reward_state.prev_balance = reward_token_balance;
 
-    // global_index += claimed_rewards / total_balance;
-    state.global_index = decimal_summation_in_256(
-        state.global_index,
-        Decimal::from_ratio(claimed_rewards, state.total_balance),
+    reward_state.global_index = decimal_summation_in_256(
+        reward_state.global_index,
+        Decimal::from_ratio(claimed_rewards, staking_token_balance_total),
     );
 
     Ok(claimed_rewards)
@@ -134,13 +204,13 @@ pub fn claim_rewards(
     info: MessageInfo,
     recipient: Option<String>,
 ) -> ContractResult<Response> {
-    let holder_addr = &info.sender;
+    let staker = &info.sender;
     match recipient {
         Some(recipient) => {
             let recipient_addr = deps.api.addr_validate(&recipient)?;
-            claim_rewards_logic(deps, env, holder_addr, &recipient_addr)
+            claim_rewards_logic(deps, env, staker, &recipient_addr)
         }
-        None => claim_rewards_logic(deps, env, holder_addr, holder_addr),
+        None => claim_rewards_logic(deps, env, staker, staker),
     }
 }
 
@@ -156,51 +226,78 @@ pub fn claim_rewards_for_someone(
 fn claim_rewards_logic(
     deps: DepsMut,
     env: Env,
-    holder_addr: &Addr,
+    staker_addr: &Addr,
     recipient: &Addr,
 ) -> ContractResult<Response> {
-    let mut holder: Holder = load_holder(deps.storage, holder_addr)?;
+    let mut staker: Staker = load_staker(deps.storage, staker_addr)?;
     let mut state: State = load_state(deps.storage)?;
     let config: Config = load_config(deps.storage)?;
 
-    calculate_global_index(deps.as_ref(), env, &config, &mut state)?;
+    calculate_global_index(
+        state.virtual_reward_balance,
+        state.staking_total_balance,
+        &mut state.virtual_rewards,
+    )?;
+    calculate_global_index(
+        query_token_balance(deps.as_ref(), &config.reward_token, &env.contract.address),
+        state.staking_total_balance,
+        &mut state.real_rewards,
+    )?;
 
-    let reward_with_decimals =
-        calculate_decimal_rewards(state.global_index, holder.index, holder.balance)?;
+    let real_reward_with_decimals = calculate_decimal_rewards(
+        state.real_rewards.global_index,
+        staker.real_index,
+        staker.balance,
+    )?;
+    let virtual_reward_with_decimals = calculate_decimal_rewards(
+        state.virtual_rewards.global_index,
+        staker.virtual_index,
+        staker.balance,
+    )?;
 
-    let all_reward_with_decimals: Decimal =
-        decimal_summation_in_256(reward_with_decimals, holder.pending_rewards);
-    let decimals: Decimal = get_decimals(all_reward_with_decimals)?;
+    let all_real_reward_with_decimals: Decimal =
+        decimal_summation_in_256(real_reward_with_decimals, staker.real_pending_rewards);
+    let real_decimals: Decimal = get_decimals(all_real_reward_with_decimals)?;
+    let real_rewards: Uint128 = all_real_reward_with_decimals * Uint128::new(1);
 
-    let rewards: Uint128 = all_reward_with_decimals * Uint128::new(1);
+    let all_virtual_reward_with_decimals: Decimal =
+        decimal_summation_in_256(virtual_reward_with_decimals, staker.virtual_pending_rewards);
+    let virtual_decimals: Decimal = get_decimals(all_virtual_reward_with_decimals)?;
+    let virtual_rewards: Uint128 = all_virtual_reward_with_decimals * Uint128::new(1);
 
+    let rewards = min(real_rewards, virtual_rewards);
     if rewards.is_zero() {
-        return Err(StdError::generic_err("No rewards have accrued yet").into());
+        return Err(ContractError::NoRewards {});
     }
 
-    let new_balance = state.prev_reward_balance.checked_sub(rewards)?;
-    state.prev_reward_balance = new_balance;
+    let new_real_balance = state.real_rewards.prev_balance.checked_sub(rewards)?;
+    state.real_rewards.prev_balance = new_real_balance;
+    let new_virtual_balance = state.virtual_rewards.prev_balance.checked_sub(rewards)?;
+    state.virtual_rewards.prev_balance = new_virtual_balance;
     save_state(deps.storage, &state)?;
 
-    holder.pending_rewards = decimals;
-    holder.index = state.global_index;
-    save_holder(deps.storage, holder_addr, &holder)?;
+    staker.real_pending_rewards =
+        staker.real_pending_rewards - Decimal::from_ratio(rewards, Uint128::new(1)) + real_decimals;
+    staker.real_index = state.real_rewards.global_index;
+    staker.virtual_pending_rewards = staker.virtual_pending_rewards
+        - Decimal::from_ratio(rewards, Uint128::new(1))
+        + virtual_decimals;
+    staker.virtual_index = state.virtual_rewards.global_index;
+    save_staker(deps.storage, staker_addr, &staker)?;
 
     Ok(Response::new()
-        .add_message(WasmMsg::Execute {
-            contract_addr: config.psi_token.to_string(),
-            funds: vec![],
-            msg: to_binary(&Cw20ExecuteMsg::Transfer {
-                recipient: recipient.to_string(),
-                amount: rewards,
+        .add_message(Asset::cw20(config.reward_token, rewards).send_msg(
+            config.staker_reward_pair,
+            to_binary(&astroport::pair::Cw20HookMsg::Swap {
+                belief_price: None,
+                max_spread: None,
+                to: Some(recipient.to_string()),
             })?,
-        })
-        .add_attributes(vec![
-            ("action", "claim_reward"),
-            ("holder_address", holder_addr.as_ref()),
-            ("recipient_address", recipient.as_ref()),
-            ("rewards", &rewards.to_string()),
-        ]))
+        )?)
+        .add_attribute("action", "claim_reward")
+        .add_attribute("staker", staker_addr)
+        .add_attribute("recipient", recipient)
+        .add_attribute("rewards", rewards))
 }
 
 pub fn increase_balance(
@@ -213,25 +310,48 @@ pub fn increase_balance(
     let address = deps.api.addr_validate(&address)?;
 
     let mut state: State = load_state(deps.storage)?;
-    let mut holder: Holder = load_holder(deps.storage, &address)?;
+    let mut staker: Staker = load_staker(deps.storage, &address)?;
 
-    // get decimals
-    let rewards = calculate_decimal_rewards(state.global_index, holder.index, holder.balance)?;
+    let real_rewards = calculate_decimal_rewards(
+        state.real_rewards.global_index,
+        staker.real_index,
+        staker.balance,
+    )?;
 
-    holder.index = state.global_index;
-    holder.pending_rewards = decimal_summation_in_256(rewards, holder.pending_rewards);
-    holder.balance += amount;
-    state.total_balance += amount;
+    staker.real_index = state.real_rewards.global_index;
+    staker.real_pending_rewards =
+        decimal_summation_in_256(real_rewards, staker.real_pending_rewards);
 
-    calculate_global_index(deps.as_ref(), env, config, &mut state)?;
-    save_holder(deps.storage, &address, &holder)?;
+    let virtual_rewards = calculate_decimal_rewards(
+        state.virtual_rewards.global_index,
+        staker.virtual_index,
+        staker.balance,
+    )?;
+
+    staker.virtual_index = state.virtual_rewards.global_index;
+    staker.virtual_pending_rewards =
+        decimal_summation_in_256(virtual_rewards, staker.virtual_pending_rewards);
+
+    staker.balance += amount;
+    state.staking_total_balance += amount;
+
+    calculate_global_index(
+        state.virtual_reward_balance,
+        state.staking_total_balance,
+        &mut state.virtual_rewards,
+    )?;
+    calculate_global_index(
+        query_token_balance(deps.as_ref(), &config.reward_token, &env.contract.address),
+        state.staking_total_balance,
+        &mut state.real_rewards,
+    )?;
+    save_staker(deps.storage, &address, &staker)?;
     save_state(deps.storage, &state)?;
 
-    Ok(Response::new().add_attributes(vec![
-        ("action", "increase_balance"),
-        ("holder_address", &address.to_string()),
-        ("amount", &amount.to_string()),
-    ]))
+    Ok(Response::new()
+        .add_attribute("action", "increase_balance")
+        .add_attribute("staker", address)
+        .add_attribute("amount", amount))
 }
 
 pub fn decrease_balance(
@@ -244,34 +364,65 @@ pub fn decrease_balance(
     let address = deps.api.addr_validate(&address)?;
 
     let mut state: State = load_state(deps.storage)?;
-    let mut holder: Holder = load_holder(deps.storage, &address)?;
+    let mut staker: Staker = load_staker(deps.storage, &address)?;
 
-    if holder.balance < amount {
-        return Err(StdError::generic_err(format!(
-            "Decrease amount cannot exceed user balance: {}",
-            holder.balance
-        ))
-        .into());
+    if staker.balance < amount {
+        return Err(ContractError::NotEnoughTokens {
+            name: config.staking_token.to_string(),
+            value: staker.balance,
+            required: amount,
+        });
     }
 
-    calculate_global_index(deps.as_ref(), env, config, &mut state)?;
+    calculate_global_index(
+        state.virtual_reward_balance,
+        state.staking_total_balance,
+        &mut state.virtual_rewards,
+    )?;
+    calculate_global_index(
+        query_token_balance(deps.as_ref(), &config.reward_token, &env.contract.address),
+        state.staking_total_balance,
+        &mut state.real_rewards,
+    )?;
 
-    // get decimals
-    let rewards = calculate_decimal_rewards(state.global_index, holder.index, holder.balance)?;
+    let real_rewards = calculate_decimal_rewards(
+        state.real_rewards.global_index,
+        staker.real_index,
+        staker.balance,
+    )?;
+    staker.real_index = state.real_rewards.global_index;
+    staker.real_pending_rewards =
+        decimal_summation_in_256(real_rewards, staker.real_pending_rewards);
 
-    holder.index = state.global_index;
-    holder.pending_rewards = decimal_summation_in_256(rewards, holder.pending_rewards);
-    holder.balance = holder.balance.checked_sub(amount)?;
-    state.total_balance = state.total_balance.checked_sub(amount)?;
+    let virtual_rewards = calculate_decimal_rewards(
+        state.virtual_rewards.global_index,
+        staker.virtual_index,
+        staker.balance,
+    )?;
+    staker.virtual_index = state.virtual_rewards.global_index;
+    staker.virtual_pending_rewards =
+        decimal_summation_in_256(virtual_rewards, staker.virtual_pending_rewards);
 
-    save_holder(deps.storage, &address, &holder)?;
+    staker.balance = staker.balance.checked_sub(amount)?;
+    state.staking_total_balance = state.staking_total_balance.checked_sub(amount)?;
+
+    save_staker(deps.storage, &address, &staker)?;
     save_state(deps.storage, &state)?;
 
-    Ok(Response::new().add_attributes(vec![
-        ("action", "decrease_balance"),
-        ("holder_address", &address.to_string()),
-        ("amount", &amount.to_string()),
-    ]))
+    Ok(Response::new()
+        .add_attribute("action", "decrease_balance")
+        .add_attribute("staker", address)
+        .add_attribute("amount", amount))
+}
+
+pub fn reward(deps: DepsMut, amount: Uint128) -> ContractResult<Response> {
+    let mut state = load_state(deps.storage)?;
+    state.virtual_reward_balance += amount;
+    save_state(deps.storage, &state)?;
+
+    Ok(Response::new()
+        .add_attribute("action", "reward")
+        .add_attribute("amount", amount))
 }
 
 fn get_time(block: &BlockInfo) -> u64 {

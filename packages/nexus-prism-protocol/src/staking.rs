@@ -1,27 +1,38 @@
 use cosmwasm_std::{Decimal, Uint128};
+use cw20::Cw20ReceiveMsg;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::common::OrderBy;
-
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct InstantiateMsg {
-    pub psi_token_addr: String,
-    pub nasset_token_addr: String,
-    pub governance_contract_addr: String,
+    pub owner: Option<String>,
+    pub staking_token: String,
+    pub rewarder: String,
+    pub reward_token: String,
+    pub staker_reward_pair: String,
+    pub governance: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ExecuteMsg {
+    Receive(Cw20ReceiveMsg),
     Anyone { anyone_msg: AnyoneMsg },
-    Token { token_msg: TokenMsg },
+    Owner { msg: OwnerMsg },
+    Rewarder { msg: RewarderMsg },
     Governance { governance_msg: GovernanceMsg },
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
+pub enum Cw20HookMsg {
+    Bond {},
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+#[serde(rename_all = "snake_case")]
 pub enum AnyoneMsg {
+    Unbond { amount: Uint128 },
     UpdateGlobalIndex {},
     ClaimRewards { recipient: Option<String> },
     //Claim rewards for some address, rewards will be sent to it, not to sender!
@@ -31,10 +42,19 @@ pub enum AnyoneMsg {
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
+pub enum RewarderMsg {
+    Reward { amount: Uint128 },
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+#[serde(rename_all = "snake_case")]
 pub enum GovernanceMsg {
     UpdateConfig {
-        psi_token_contract_addr: Option<String>,
-        nasset_token_contract_addr: Option<String>,
+        owner: Option<String>,
+        staking_token: Option<String>,
+        rewarder: Option<String>,
+        reward_token: Option<String>,
+        staker_reward_pair: Option<String>,
     },
     UpdateGovernanceContract {
         gov_addr: String,
@@ -45,14 +65,8 @@ pub enum GovernanceMsg {
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
-pub enum TokenMsg {
-    /// Increase user staking balance
-    /// Withdraw rewards to pending rewards
-    /// Set current reward index to global index
+pub enum OwnerMsg {
     IncreaseBalance { address: String, amount: Uint128 },
-    /// Decrease user staking balance
-    /// Withdraw rewards to pending rewards
-    /// Set current reward index to global index
     DecreaseBalance { address: String, amount: Uint128 },
 }
 
@@ -60,50 +74,32 @@ pub enum TokenMsg {
 #[serde(rename_all = "snake_case")]
 pub enum QueryMsg {
     Config {},
-    State {},
-    AccruedRewards {
-        address: String,
-    },
-    Holder {
-        address: String,
-    },
-    Holders {
-        start_after: Option<String>,
-        limit: Option<u32>,
-        order_by: Option<OrderBy>,
-    },
+    Rewards { address: String },
+    Staker { address: String },
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct ConfigResponse {
-    pub psi_token_addr: String,
-    pub nasset_token_addr: String,
-    pub governance_contract_addr: String,
+    pub owner: Option<String>,
+    pub staking_token: String,
+    pub rewarder: String,
+    pub reward_token: String,
+    pub staker_reward_pair: String,
+    pub governance: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
-pub struct StateResponse {
-    pub global_index: Decimal,
-    pub total_balance: Uint128,
-    pub prev_reward_balance: Uint128,
+pub struct RewardsResponse {
+    pub virtual_rewards: Uint128,
+    pub real_rewards: Uint128,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
-pub struct AccruedRewardsResponse {
-    pub rewards: Uint128,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
-pub struct HolderResponse {
+pub struct StakerResponse {
     pub address: String,
     pub balance: Uint128,
-    pub index: Decimal,
-    pub pending_rewards: Decimal,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
-pub struct HoldersResponse {
-    pub holders: Vec<HolderResponse>,
+    pub virtual_pending_rewards: Decimal,
+    pub real_pending_rewards: Decimal,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]

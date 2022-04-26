@@ -2,9 +2,9 @@ use std::env::current_dir;
 use std::fs::create_dir_all;
 
 use cosmwasm_schema::{export_schema, remove_schemas, schema_for};
-use nexus_prism_protocol::staking::{
-    AnyoneMsg, ConfigResponse, ExecuteMsg, GovernanceMsg, InstantiateMsg, MigrateMsg, OwnerMsg,
-    QueryMsg, RewardsResponse, StakerResponse,
+use nasset_autocompounder::msg::{
+    AutoNassetValueResponse, ConfigResponse, Cw20HookMsg, ExecuteMsg, GovernanceMsg,
+    InstantiateMsg, QueryMsg,
 };
 
 fn main() {
@@ -12,15 +12,11 @@ fn main() {
     out_dir.push("schema");
     create_dir_all(&out_dir).unwrap();
     remove_schemas(&out_dir).unwrap();
-
     export_schema(&schema_for!(InstantiateMsg), &out_dir);
     export_schema(&schema_for!(ExecuteMsg), &out_dir);
-    export_schema(&schema_for!(AnyoneMsg), &out_dir);
     export_schema(&schema_for!(GovernanceMsg), &out_dir);
-    export_schema(&schema_for!(OwnerMsg), &out_dir);
+    export_schema(&schema_for!(Cw20HookMsg), &out_dir);
     export_schema(&schema_for!(QueryMsg), &out_dir);
     export_schema(&schema_for!(ConfigResponse), &out_dir);
-    export_schema(&schema_for!(RewardsResponse), &out_dir);
-    export_schema(&schema_for!(StakerResponse), &out_dir);
-    export_schema(&schema_for!(MigrateMsg), &out_dir);
+    export_schema(&schema_for!(AutoNassetValueResponse), &out_dir);
 }

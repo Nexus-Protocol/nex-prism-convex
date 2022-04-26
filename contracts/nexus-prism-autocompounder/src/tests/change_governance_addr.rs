@@ -1,11 +1,12 @@
-use crate::error::ContractError;
-use crate::state::{load_config, load_gov_update};
-use crate::tests::sdk::GOVERNANCE_CONTRACT_ADDR;
+use crate::{
+    msg::{ExecuteMsg, GovernanceMsg},
+    state::{load_config, load_gov_update},
+};
 
-use super::sdk::Sdk;
+use super::sdk::{Sdk, GOVERNANCE_CONTRACT_ADDR};
+
 use cosmwasm_std::testing::{mock_env, mock_info};
 use cosmwasm_std::{Addr, BlockInfo, StdError};
-use nexus_prism_protocol::staking::{AnyoneMsg, ExecuteMsg, GovernanceMsg};
 
 #[test]
 fn fail_to_change_governance_if_sender_is_not_governance() {
@@ -23,7 +24,7 @@ fn fail_to_change_governance_if_sender_is_not_governance() {
     let res = crate::contract::execute(sdk.deps.as_mut(), env, info, change_gov_msg);
     assert!(res.is_err());
     let error_value = res.err().unwrap();
-    assert_eq!(ContractError::Unauthorized, error_value);
+    assert_eq!(StdError::generic_err("unauthorized"), error_value);
 }
 
 #[test]
@@ -59,9 +60,7 @@ fn success_to_change_governance_if_sender_governance() {
 
     // Send message to accept governance
     {
-        let accept_gov_msg = ExecuteMsg::Anyone {
-            anyone_msg: AnyoneMsg::AcceptGovernance {},
-        };
+        let accept_gov_msg = ExecuteMsg::AcceptGovernance {};
 
         let mut env = mock_env();
         env.block.time = env.block.time.plus_seconds(20);
@@ -72,7 +71,7 @@ fn success_to_change_governance_if_sender_governance() {
         assert!(gov_update_state.is_err());
 
         let config = load_config(&sdk.deps.storage).unwrap();
-        assert_eq!(config.governance, new_gov_addr);
+        assert_eq!(config.governance_contract, new_gov_addr);
     }
 }
 
@@ -110,9 +109,7 @@ fn fail_to_accept_governance_if_sender_is_wrong() {
 
     // Send message to accept governance from wrong address
     {
-        let accept_gov_msg = ExecuteMsg::Anyone {
-            anyone_msg: AnyoneMsg::AcceptGovernance {},
-        };
+        let accept_gov_msg = ExecuteMsg::AcceptGovernance {};
 
         let mut env = mock_env();
         env.block.time = env.block.time.plus_seconds(20);
@@ -122,7 +119,7 @@ fn fail_to_accept_governance_if_sender_is_wrong() {
 
         assert!(gov_update_state_res.is_err());
         let error_value = gov_update_state_res.err().unwrap();
-        assert_eq!(ContractError::Unauthorized, error_value);
+        assert_eq!(StdError::generic_err("unauthorized"), error_value);
     }
 }
 
@@ -159,9 +156,7 @@ fn too_late_to_change_governance() {
 
     // Send message to accept governance
     {
-        let accept_gov_msg = ExecuteMsg::Anyone {
-            anyone_msg: AnyoneMsg::AcceptGovernance {},
-        };
+        let accept_gov_msg = ExecuteMsg::AcceptGovernance {};
 
         let mut env = mock_env();
         env.block.time = env
@@ -172,14 +167,8 @@ fn too_late_to_change_governance() {
         let accept_gov_res = crate::contract::execute(sdk.deps.as_mut(), env, info, accept_gov_msg);
 
         assert!(accept_gov_res.is_err());
-        if let ContractError::Std(std_error) = accept_gov_res.err().unwrap() {
-            match std_error {
-                StdError::GenericErr { msg, .. } => {
-                    assert_eq!("too late to accept governance owning", msg);
-                }
-
-                _ => panic!("wrong error"),
-            }
+        if let StdError::GenericErr { msg } = accept_gov_res.err().unwrap() {
+            assert_eq!("too late to accept governance owning", msg);
         } else {
             panic!("wrong error");
         }

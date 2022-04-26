@@ -1,6 +1,6 @@
 use super::sdk::Sdk;
 use crate::error::ContractError;
-use crate::state::{load_holder, load_state};
+use crate::state::{load_staker, load_state};
 use cosmwasm_std::{Addr, StdError};
 use cosmwasm_std::{Decimal, Uint128};
 use std::str::FromStr;
@@ -89,7 +89,7 @@ fn increase_balance_should_update_index() {
 
     let state = load_state(&sdk.deps.storage).unwrap();
     assert_eq!(Decimal::zero(), state.global_index);
-    assert_eq!(Uint128::zero(), state.total_balance);
+    assert_eq!(Uint128::zero(), state.staking_total_balance);
     assert_eq!(Uint128::zero(), state.prev_reward_balance);
 
     //===============================================================================
@@ -98,14 +98,14 @@ fn increase_balance_should_update_index() {
 
     let deposit_amount: Uint128 = 100u128.into();
     sdk.increase_user_balance(&user_address, deposit_amount);
-    let holder_state = load_holder(&sdk.deps.storage, &user_address).unwrap();
+    let holder_state = load_staker(&sdk.deps.storage, &user_address).unwrap();
     assert_eq!(deposit_amount, holder_state.balance);
-    assert_eq!(Decimal::zero(), holder_state.index);
-    assert_eq!(Decimal::zero(), holder_state.pending_rewards);
+    assert_eq!(Decimal::zero(), holder_state.real_index);
+    assert_eq!(Decimal::zero(), holder_state.real_pending_rewards);
 
     let state = load_state(&sdk.deps.storage).unwrap();
     assert_eq!(Decimal::from_str("10").unwrap(), state.global_index);
-    assert_eq!(deposit_amount, state.total_balance);
+    assert_eq!(deposit_amount, state.staking_total_balance);
     assert_eq!(rewards, state.prev_reward_balance);
     //===============================================================================
 }
@@ -123,10 +123,10 @@ fn decrease_balance_should_update_index() {
 
     let deposit_amount: Uint128 = 100u128.into();
     sdk.increase_user_balance(&user_address, deposit_amount);
-    let holder_state = load_holder(&sdk.deps.storage, &user_address).unwrap();
+    let holder_state = load_staker(&sdk.deps.storage, &user_address).unwrap();
     assert_eq!(deposit_amount, holder_state.balance);
-    assert_eq!(Decimal::zero(), holder_state.index);
-    assert_eq!(Decimal::zero(), holder_state.pending_rewards);
+    assert_eq!(Decimal::zero(), holder_state.real_index);
+    assert_eq!(Decimal::zero(), holder_state.real_pending_rewards);
 
     sdk.query_holder_state(
         &user_address,
@@ -154,17 +154,17 @@ fn decrease_balance_should_update_index() {
 
     let withdraw_amount: Uint128 = 50u128.into();
     sdk.decrease_user_balance(&user_address, withdraw_amount);
-    let holder_state = load_holder(&sdk.deps.storage, &user_address).unwrap();
+    let holder_state = load_staker(&sdk.deps.storage, &user_address).unwrap();
     assert_eq!(Uint128::new(50), holder_state.balance);
-    assert_eq!(Decimal::from_str("10").unwrap(), holder_state.index);
+    assert_eq!(Decimal::from_str("10").unwrap(), holder_state.real_index);
     assert_eq!(
         Decimal::from_str("1000").unwrap(),
-        holder_state.pending_rewards
+        holder_state.real_pending_rewards
     );
 
     let state = load_state(&sdk.deps.storage).unwrap();
     assert_eq!(Decimal::from_str("10").unwrap(), state.global_index);
-    assert_eq!(Uint128::new(50), state.total_balance);
+    assert_eq!(Uint128::new(50), state.staking_total_balance);
     assert_eq!(rewards, state.prev_reward_balance);
 
     sdk.query_holder_state(
