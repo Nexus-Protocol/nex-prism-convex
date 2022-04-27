@@ -27,6 +27,7 @@ cw-storage-plus = "0.9.1"
 cw20 = "0.9.1"
 cw20-base = {version = "0.9.1", features = ["library"]}
 nexus-prism-protocol = {path = "../../packages/nexus-prism-protocol"}
+protobuf = {version = "2.27.1", features = ["with-bytes"]}
 schemars = "0.8.8"
 serde = {version = "1.0.136", default-features = false, features = ["derive"]}
 terra-cosmwasm = "2.2.0"

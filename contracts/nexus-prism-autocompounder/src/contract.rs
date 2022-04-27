@@ -1,10 +1,10 @@
+use crate::reply_response::MsgInstantiateContractResponse;
 use cosmwasm_std::{
     entry_point, to_binary, Addr, Binary, CosmosMsg, Deps, DepsMut, Env, MessageInfo, Reply,
     Response, StdError, StdResult, SubMsg, Uint128, WasmMsg,
 };
 use nexus_prism_protocol::common::{query_token_balance, query_token_supply};
-use nexus_prism_protocol::protobuf::Message;
-use nexus_prism_protocol::reply_response::MsgInstantiateContractResponse;
+use protobuf::Message;
 
 use crate::commands::get_compounding_token_balance;
 use crate::msg::{

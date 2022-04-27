@@ -1,5 +1,6 @@
 use std::cmp::Ordering;
 
+use crate::reply_response::MsgInstantiateContractResponse;
 use astroport::asset::AssetInfo;
 use cosmwasm_bignumber::{Decimal256, Uint256};
 #[cfg(not(feature = "library"))]
@@ -12,13 +13,12 @@ use cw0::nonpayable;
 use cw2::{get_contract_version, set_contract_version};
 use cw20::{Cw20ExecuteMsg, Cw20ReceiveMsg, MinterResponse};
 use nexus_prism_protocol::common::{div, get_price, mint, mul, query_token_balance, transfer};
-use nexus_prism_protocol::protobuf::Message;
-use nexus_prism_protocol::reply_response::MsgInstantiateContractResponse;
 use nexus_prism_protocol::vault::{
     ConfigResponse, Cw20HookMsg, ExecuteMsg, GovernanceMsg, InstantiateMsg, MigrateMsg, QueryMsg,
 };
 use prism_protocol::launch_pool::{DistributionStatusResponse, RewardInfoResponse};
 use prism_protocol::xprism_boost::UserInfo;
+use protobuf::Message;
 
 use crate::error::ContractError;
 use crate::state::{
