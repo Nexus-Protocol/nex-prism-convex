@@ -21,13 +21,14 @@ backtraces = ["cosmwasm-std/backtraces"]
 
 [dependencies]
 cosmwasm-bignumber = "2.2.0"
-cosmwasm-std = {version = "0.16.5", features = ["iterator"]}
-cosmwasm-storage = {version = "0.16.5", features = ["iterator"]}
+cosmwasm-std = {version = "0.16.7", features = ["iterator"]}
+cosmwasm-storage = {version = "0.16.7", features = ["iterator"]}
 cw20 = "0.9.1"
 cw20-base = {version = "0.9.1", features = ["library"]}
+protobuf = {version = "2.27.1", features = ["with-bytes"]}
 schemars = "0.8.8"
 serde = {version = "1.0.136", default-features = false, features = ["derive"]}
 thiserror = "1.0.30"
 
 [dev-dependencies]
-cosmwasm-schema = "0.16.0"
+cosmwasm-schema = "0.16.7"

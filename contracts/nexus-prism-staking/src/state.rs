@@ -9,7 +9,7 @@ pub struct Config {
     pub staking_token: Addr,
     pub rewarder: Addr,
     pub reward_token: Addr,
-    pub staker_reward_pair: Addr,
+    pub staker_reward_pair: Vec<Addr>,
     pub governance: Addr,
 }
 
@@ -45,7 +45,7 @@ pub struct GovernanceUpdateState {
 static KEY_CONFIG: Item<Config> = Item::new("config");
 static KEY_STATE: Item<State> = Item::new("state");
 static KEY_GOVERNANCE_UPDATE: Item<GovernanceUpdateState> = Item::new("gov_update");
-pub(crate) static HOLDERS: Map<&Addr, Staker> = Map::new("state");
+pub(crate) static STAKERS: Map<&Addr, Staker> = Map::new("state");
 
 pub fn load_state(storage: &dyn Storage) -> StdResult<State> {
     KEY_STATE.load(storage)
@@ -64,13 +64,13 @@ pub fn save_config(storage: &mut dyn Storage, config: &Config) -> StdResult<()> 
 }
 
 pub fn load_staker(storage: &dyn Storage, addr: &Addr) -> StdResult<Staker> {
-    HOLDERS
+    STAKERS
         .may_load(storage, addr)
         .map(|res| res.unwrap_or_default())
 }
 
 pub fn save_staker(storage: &mut dyn Storage, addr: &Addr, holder: &Staker) -> StdResult<()> {
-    HOLDERS.save(storage, addr, holder)
+    STAKERS.save(storage, addr, holder)
 }
 
 pub fn load_gov_update(storage: &dyn Storage) -> StdResult<GovernanceUpdateState> {

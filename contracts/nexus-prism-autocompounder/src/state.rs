@@ -11,6 +11,7 @@ pub struct Config {
     pub reward_compound_pair: Addr,
     pub governance_contract: Addr,
     pub rewards_contract: Addr,
+    pub staking_contract: Addr,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -60,9 +61,12 @@ pub fn remove_withdraw_action(storage: &mut dyn Storage) -> StdResult<()> {
     KEY_WITHDRAW_ACTION.save(storage, &None)
 }
 
-pub fn config_set_nasset_token(storage: &mut dyn Storage, nasset_token: Addr) -> StdResult<Config> {
+pub fn config_set_auto_compounding_token(
+    storage: &mut dyn Storage,
+    token: Addr,
+) -> StdResult<Config> {
     KEY_CONFIG.update(storage, |mut config: Config| -> StdResult<_> {
-        config.compounding_token = nasset_token;
+        config.auto_compounding_token = token;
         Ok(config)
     })
 }

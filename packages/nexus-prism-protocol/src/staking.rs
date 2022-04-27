@@ -9,7 +9,7 @@ pub struct InstantiateMsg {
     pub staking_token: String,
     pub rewarder: String,
     pub reward_token: String,
-    pub staker_reward_pair: String,
+    pub staker_reward_pair: Vec<String>,
     pub governance: String,
 }
 
@@ -54,7 +54,7 @@ pub enum GovernanceMsg {
         staking_token: Option<String>,
         rewarder: Option<String>,
         reward_token: Option<String>,
-        staker_reward_pair: Option<String>,
+        staker_reward_pair: Option<Vec<String>>,
     },
     UpdateGovernanceContract {
         gov_addr: String,
@@ -66,8 +66,18 @@ pub enum GovernanceMsg {
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum OwnerMsg {
-    IncreaseBalance { address: String, amount: Uint128 },
-    DecreaseBalance { address: String, amount: Uint128 },
+    IncreaseBalance {
+        address: String,
+        amount: Uint128,
+        // current: Uint128,
+        // total: Uint128,
+    },
+    DecreaseBalance {
+        address: String,
+        amount: Uint128,
+        // current: Uint128,
+        // total: Uint128,
+    },
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]

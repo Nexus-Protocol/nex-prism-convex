@@ -2,9 +2,8 @@ use std::env::current_dir;
 use std::fs::create_dir_all;
 
 use cosmwasm_schema::{export_schema, remove_schemas, schema_for};
-use nasset_autocompounder::msg::{
-    AutoNassetValueResponse, ConfigResponse, Cw20HookMsg, ExecuteMsg, GovernanceMsg,
-    InstantiateMsg, QueryMsg,
+use nexus_prism_autocompounder::msg::{
+    ConfigResponse, Cw20HookMsg, ExecuteMsg, GovernanceMsg, InstantiateMsg, QueryMsg,
 };
 
 fn main() {
@@ -18,5 +17,4 @@ fn main() {
     export_schema(&schema_for!(Cw20HookMsg), &out_dir);
     export_schema(&schema_for!(QueryMsg), &out_dir);
     export_schema(&schema_for!(ConfigResponse), &out_dir);
-    export_schema(&schema_for!(AutoNassetValueResponse), &out_dir);
 }

@@ -30,7 +30,11 @@ pub fn instantiate(
         staking_token: deps.api.addr_validate(&msg.staking_token)?,
         rewarder: deps.api.addr_validate(&msg.rewarder)?,
         reward_token: deps.api.addr_validate(&msg.reward_token)?,
-        staker_reward_pair: deps.api.addr_validate(&msg.staker_reward_pair)?,
+        staker_reward_pair: msg
+            .staker_reward_pair
+            .into_iter()
+            .map(|p| deps.api.addr_validate(&p))
+            .collect::<Result<Vec<_>, _>>()?,
         governance: deps.api.addr_validate(&msg.governance)?,
     };
 

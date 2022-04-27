@@ -17,7 +17,11 @@ pub fn query_config(deps: Deps) -> StdResult<ConfigResponse> {
         staking_token: config.staking_token.to_string(),
         rewarder: config.rewarder.to_string(),
         reward_token: config.reward_token.to_string(),
-        staker_reward_pair: config.staker_reward_pair.to_string(),
+        staker_reward_pair: config
+            .staker_reward_pair
+            .iter()
+            .map(|p| p.to_string())
+            .collect(),
         governance: config.governance.to_string(),
     })
 }

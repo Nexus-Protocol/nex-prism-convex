@@ -12,6 +12,8 @@ pub struct InstantiateMsg {
     pub reward_compound_pair: String,
     pub governance_contract_addr: String,
     pub rewards_contract: String,
+    pub staking_contract: String,
+    pub cw20_token_code_id: u64,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
@@ -32,6 +34,7 @@ pub enum GovernanceMsg {
         reward_token: Option<String>,
         reward_compound_pair: Option<String>,
         rewards_contract: Option<String>,
+        staking_contract: Option<String>,
     },
     UpdateGovernanceContract {
         gov_addr: String,
@@ -63,6 +66,7 @@ pub struct ConfigResponse {
     pub reward_compound_pair: String,
     pub governance_contract_addr: String,
     pub rewards_contract: String,
+    pub staking_contract: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]

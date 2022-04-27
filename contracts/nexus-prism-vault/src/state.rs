@@ -1,4 +1,4 @@
-use cosmwasm_std::{Addr, Decimal, Storage, Uint128};
+use cosmwasm_std::{Addr, Decimal, StdResult, Storage, Uint128};
 use cw_storage_plus::Item;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -9,6 +9,7 @@ use crate::error::ContractError;
 pub struct Config {
     pub owner: Addr,
     pub governance: Addr,
+    pub psi_token: Addr,
     pub xprism_token: Addr,
     pub nexprism_token: Addr,
     pub yluna_token: Addr,
@@ -16,9 +17,13 @@ pub struct Config {
     pub prism_token: Addr,
     pub prism_launch_pool: Addr,
     pub prism_xprism_boost: Addr,
+    pub astroport_factory: Addr,
+    pub staking_code_id: u64,
+    pub staking_admin: Addr,
     pub nexprism_xprism_staking: Addr,
     pub psi_nexprism_staking: Addr,
     pub yluna_prism_staking: Addr,
+    pub xprism_nexprism_pair: Addr,
     pub xprism_prism_pair: Addr,
     pub yluna_prism_pair: Addr,
     pub rewards_distribution_update_period: Option<u64>,
@@ -57,6 +62,48 @@ pub fn save_state(
     STATE.save(store, state)?;
 
     Ok(())
+}
+
+pub fn set_nyluna(storage: &mut dyn Storage, addr: Addr) -> StdResult<Config> {
+    CONFIG.update(storage, |mut config: Config| -> StdResult<_> {
+        config.nyluna_token = addr;
+        Ok(config)
+    })
+}
+
+pub fn set_nexprism(storage: &mut dyn Storage, addr: Addr) -> StdResult<Config> {
+    CONFIG.update(storage, |mut config: Config| -> StdResult<_> {
+        config.nexprism_token = addr;
+        Ok(config)
+    })
+}
+
+pub fn set_nexprism_staking(storage: &mut dyn Storage, addr: Addr) -> StdResult<Config> {
+    CONFIG.update(storage, |mut config: Config| -> StdResult<_> {
+        config.nexprism_xprism_staking = addr;
+        Ok(config)
+    })
+}
+
+pub fn set_yluna_staking(storage: &mut dyn Storage, addr: Addr) -> StdResult<Config> {
+    CONFIG.update(storage, |mut config: Config| -> StdResult<_> {
+        config.yluna_prism_staking = addr;
+        Ok(config)
+    })
+}
+
+pub fn set_psi_staking(storage: &mut dyn Storage, addr: Addr) -> StdResult<Config> {
+    CONFIG.update(storage, |mut config: Config| -> StdResult<_> {
+        config.psi_nexprism_staking = addr;
+        Ok(config)
+    })
+}
+
+pub fn set_xprism_nexprism_pair(storage: &mut dyn Storage, addr: Addr) -> StdResult<Config> {
+    CONFIG.update(storage, |mut config: Config| -> StdResult<_> {
+        config.xprism_nexprism_pair = addr;
+        Ok(config)
+    })
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]

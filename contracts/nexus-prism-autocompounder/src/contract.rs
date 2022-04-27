@@ -1,51 +1,99 @@
 use cosmwasm_std::{
-    entry_point, to_binary, Binary, Deps, DepsMut, Env, MessageInfo, Reply, Response, StdError,
-    StdResult, SubMsg, Uint128, WasmMsg,
+    entry_point, to_binary, Addr, Binary, CosmosMsg, Deps, DepsMut, Env, MessageInfo, Reply,
+    Response, StdError, StdResult, SubMsg, Uint128, WasmMsg,
 };
 use nexus_prism_protocol::common::{query_token_balance, query_token_supply};
+use nexus_prism_protocol::protobuf::Message;
+use nexus_prism_protocol::reply_response::MsgInstantiateContractResponse;
 
+use crate::commands::get_compounding_token_balance;
 use crate::msg::{
     AstroportCw20HookMsg, AutoCompoundingTokenValueResponse, CompoundingTokenValueResponse,
     ConfigResponse, ExecuteMsg, GovernanceMsg, InstantiateMsg, MigrateMsg, QueryMsg,
 };
-use crate::state::Config;
+use crate::state::{config_set_auto_compounding_token, Config};
 use crate::{
     commands,
     state::{load_config, remove_withdraw_action, store_config},
     SubmsgIds,
 };
 use cosmwasm_bignumber::{Decimal256, Uint256};
-use cw20::Cw20ExecuteMsg;
+use cw20::{Cw20ExecuteMsg, MinterResponse, TokenInfoResponse};
 use std::convert::TryFrom;
-
-// TODO: stake on deposit, query balance from staking
-// TODO: claim rewards
 
 #[entry_point]
 pub fn instantiate(
     deps: DepsMut,
-    _env: Env,
+    env: Env,
     _info: MessageInfo,
     msg: InstantiateMsg,
 ) -> StdResult<Response> {
     let config = Config {
         compounding_token: deps.api.addr_validate(&msg.compounding_token)?,
-        auto_compounding_token: deps.api.addr_validate(&msg.auto_compounding_token)?,
+        auto_compounding_token: Addr::unchecked(""),
         reward_token: deps.api.addr_validate(&msg.reward_token)?,
         reward_compound_pair: deps.api.addr_validate(&msg.reward_compound_pair)?,
         governance_contract: deps.api.addr_validate(&msg.governance_contract_addr)?,
         rewards_contract: deps.api.addr_validate(&msg.rewards_contract)?,
+        staking_contract: deps.api.addr_validate(&msg.staking_contract)?,
     };
     store_config(deps.storage, &config)?;
     remove_withdraw_action(deps.storage)?;
 
-    Ok(Response::new().add_attribute("action", "instantiate"))
+    let compounder_token_info: TokenInfoResponse = deps
+        .querier
+        .query_wasm_smart(config.compounding_token, &cw20::Cw20QueryMsg::TokenInfo {})?;
+
+    Ok(Response::new()
+        .add_submessage(SubMsg::reply_on_success(
+            CosmosMsg::Wasm(WasmMsg::Instantiate {
+                admin: Some(config.governance_contract.to_string()),
+                code_id: msg.cw20_token_code_id,
+                msg: to_binary(&cw20_base::msg::InstantiateMsg {
+                    name: format!(
+                        "{} autocompounder share representation",
+                        compounder_token_info.symbol,
+                    ),
+                    symbol: format!("c{}", compounder_token_info.symbol),
+                    decimals: 6,
+                    initial_balances: vec![],
+                    mint: Some(MinterResponse {
+                        minter: env.contract.address.to_string(),
+                        cap: None,
+                    }),
+                    marketing: None,
+                })?,
+                funds: vec![],
+                label: "".to_string(),
+            }),
+            SubmsgIds::InitAutoCompoundingToken.id(),
+        ))
+        .add_attribute("action", "instantiate"))
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn reply(deps: DepsMut, env: Env, msg: Reply) -> StdResult<Response> {
     let submessage_enum = SubmsgIds::try_from(msg.id)?;
     match submessage_enum {
+        SubmsgIds::InitAutoCompoundingToken => {
+            let data = msg.result.unwrap().data.unwrap();
+            let res: MsgInstantiateContractResponse = Message::parse_from_bytes(data.as_slice())
+                .map_err(|_| {
+                    StdError::parse_err("MsgInstantiateContractResponse", "failed to parse data")
+                })?;
+
+            let auto_compounding_token = res.get_contract_address();
+            config_set_auto_compounding_token(
+                deps.storage,
+                Addr::unchecked(auto_compounding_token),
+            )?;
+
+            Ok(Response::new().add_attributes(vec![
+                ("action", "auto_compounding_token_initialized"),
+                ("auto_compounding_token_addr", auto_compounding_token),
+            ]))
+        }
+
         SubmsgIds::RewardsClaimed => {
             let config = load_config(deps.storage)?;
             let reward_token_balance =
@@ -98,6 +146,7 @@ pub fn execute(deps: DepsMut, env: Env, info: MessageInfo, msg: ExecuteMsg) -> S
                     reward_token,
                     reward_compound_pair,
                     rewards_contract,
+                    staking_contract,
                 } => commands::update_config(
                     deps,
                     config,
@@ -106,6 +155,7 @@ pub fn execute(deps: DepsMut, env: Env, info: MessageInfo, msg: ExecuteMsg) -> S
                     reward_token,
                     reward_compound_pair,
                     rewards_contract,
+                    staking_contract,
                 ),
 
                 GovernanceMsg::UpdateGovernanceContract {
@@ -144,6 +194,7 @@ pub fn query_config(deps: Deps) -> StdResult<ConfigResponse> {
         reward_compound_pair: config.reward_compound_pair.to_string(),
         governance_contract_addr: config.governance_contract.to_string(),
         rewards_contract: config.rewards_contract.to_string(),
+        staking_contract: config.staking_contract.to_string(),
     })
 }
 
@@ -155,7 +206,7 @@ pub fn query_auto_compounding_token_value(
     let config: Config = load_config(deps.storage)?;
 
     let compounding_token_balance: Uint256 =
-        query_token_balance(deps, &config.compounding_token, &env.contract.address).into();
+        get_compounding_token_balance(deps, env, &config.staking_contract)?.into();
 
     let auto_compounding_token_supply: Uint256 =
         query_token_supply(deps, &config.auto_compounding_token)?.into();
@@ -176,7 +227,7 @@ pub fn query_compounding_token_value(
     let config: Config = load_config(deps.storage)?;
 
     let compounding_token_balance: Uint256 =
-        query_token_balance(deps, &config.compounding_token, &env.contract.address).into();
+        get_compounding_token_balance(deps, env, &config.staking_contract)?.into();
 
     let auto_compounding_token_supply: Uint256 =
         query_token_supply(deps, &config.auto_compounding_token)?.into();

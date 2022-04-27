@@ -10,12 +10,16 @@ use crate::{
 };
 use cosmwasm_bignumber::{Decimal256, Uint256};
 use cosmwasm_std::{
-    from_binary, to_binary, Addr, CosmosMsg, DepsMut, Env, MessageInfo, Response, StdError,
+    from_binary, to_binary, Addr, CosmosMsg, Deps, DepsMut, Env, MessageInfo, Response, StdError,
     StdResult, SubMsg, Uint128, WasmMsg,
 };
 use cw20::{Cw20ExecuteMsg, Cw20ReceiveMsg};
-use nexus_prism_protocol::common::{get_time, query_token_balance, query_token_supply};
+use nexus_prism_protocol::{
+    common::{get_time, query_token_balance, query_token_supply},
+    staking::StakerResponse,
+};
 
+#[allow(clippy::too_many_arguments)]
 pub fn update_config(
     deps: DepsMut,
     mut config: Config,
@@ -24,6 +28,7 @@ pub fn update_config(
     reward_token: Option<String>,
     reward_compound_pair: Option<String>,
     rewards_contract: Option<String>,
+    staking_contract: Option<String>,
 ) -> StdResult<Response> {
     if let Some(compounding_token) = compounding_token {
         config.compounding_token = deps.api.addr_validate(&compounding_token)?;
@@ -43,6 +48,10 @@ pub fn update_config(
 
     if let Some(rewards_contract) = rewards_contract {
         config.rewards_contract = deps.api.addr_validate(&rewards_contract)?;
+    }
+
+    if let Some(staking_contract) = staking_contract {
+        config.staking_contract = deps.api.addr_validate(&staking_contract)?;
     }
 
     store_config(deps.storage, &config)?;
@@ -133,20 +142,15 @@ pub fn deposit_compounding_token(
     let auto_compounding_token_supply: Uint256 =
         query_token_supply(deps.as_ref(), &config.auto_compounding_token)?.into();
 
-    let compounding_token_balance: Uint256 = query_token_balance(
-        deps.as_ref(),
-        &config.compounding_token,
-        &env.contract.address,
-    )
-    .into();
+    let compounding_token_balance: Uint256 =
+        get_compounding_token_balance(deps.as_ref(), env, &config.staking_contract)?.into();
 
     let is_first_depositor = auto_compounding_token_supply.is_zero();
 
     let auto_compounding_token_to_mint = if is_first_depositor {
         amount
     } else {
-        auto_compounding_token_supply * amount
-            / Decimal256::from_uint256(compounding_token_balance - amount)
+        auto_compounding_token_supply * amount / Decimal256::from_uint256(compounding_token_balance)
     };
 
     Ok(Response::new()
@@ -155,6 +159,15 @@ pub fn deposit_compounding_token(
             msg: to_binary(&Cw20ExecuteMsg::Mint {
                 recipient: farmer.to_string(),
                 amount: auto_compounding_token_to_mint.into(),
+            })?,
+            funds: vec![],
+        })
+        .add_message(WasmMsg::Execute {
+            contract_addr: config.compounding_token.to_string(),
+            msg: to_binary(&Cw20ExecuteMsg::Send {
+                contract: config.staking_contract.to_string(),
+                amount: amount.into(),
+                msg: to_binary(&nexus_prism_protocol::staking::Cw20HookMsg::Bond {})?,
             })?,
             funds: vec![],
         })
@@ -202,7 +215,11 @@ pub fn withdraw_compounding_token(
         .add_submessage(SubMsg::reply_always(
             CosmosMsg::Wasm(WasmMsg::Execute {
                 contract_addr: config.rewards_contract.to_string(),
-                msg: to_binary(&todo!())?,
+                msg: to_binary(&nexus_prism_protocol::staking::ExecuteMsg::Anyone {
+                    anyone_msg: nexus_prism_protocol::staking::AnyoneMsg::ClaimRewards {
+                        recipient: None,
+                    },
+                })?,
                 funds: vec![],
             }),
             SubmsgIds::RewardsClaimed.id(),
@@ -217,7 +234,11 @@ pub fn compound(deps: DepsMut, _env: Env, _info: MessageInfo) -> StdResult<Respo
         .add_submessage(SubMsg::reply_on_success(
             CosmosMsg::Wasm(WasmMsg::Execute {
                 contract_addr: config.rewards_contract.to_string(),
-                msg: to_binary(&todo!())?,
+                msg: to_binary(&nexus_prism_protocol::staking::ExecuteMsg::Anyone {
+                    anyone_msg: nexus_prism_protocol::staking::AnyoneMsg::ClaimRewards {
+                        recipient: None,
+                    },
+                })?,
                 funds: vec![],
             }),
             SubmsgIds::RewardsClaimed.id(),
@@ -227,15 +248,26 @@ pub fn compound(deps: DepsMut, _env: Env, _info: MessageInfo) -> StdResult<Respo
 
 pub fn execute_withdraw(deps: DepsMut, env: Env) -> StdResult<Response> {
     let config = load_config(deps.storage)?;
+
+    let resp = Response::new().add_message(WasmMsg::Execute {
+        contract_addr: config.compounding_token.to_string(),
+        msg: to_binary(&Cw20ExecuteMsg::Send {
+            contract: config.staking_contract.to_string(),
+            amount: query_token_balance(
+                deps.as_ref(),
+                &config.compounding_token,
+                &env.contract.address,
+            ),
+            msg: to_binary(&nexus_prism_protocol::staking::Cw20HookMsg::Bond {})?,
+        })?,
+        funds: vec![],
+    });
+
     if let Some(withdraw_action) = load_withdraw_action(deps.storage)? {
         remove_withdraw_action(deps.storage)?;
 
-        let compounding_token_balance: Uint256 = query_token_balance(
-            deps.as_ref(),
-            &config.compounding_token,
-            &env.contract.address,
-        )
-        .into();
+        let compounding_token_balance: Uint256 =
+            get_compounding_token_balance(deps.as_ref(), env, &config.staking_contract)?.into();
 
         let auto_compounding_token_supply: Uint256 =
             query_token_supply(deps.as_ref(), &config.auto_compounding_token)?.into();
@@ -244,7 +276,14 @@ pub fn execute_withdraw(deps: DepsMut, env: Env) -> StdResult<Response> {
             * Uint256::from(withdraw_action.auto_compounding_token_amount)
             / Decimal256::from_uint256(auto_compounding_token_supply);
 
-        Ok(Response::new()
+        Ok(resp
+            .add_message(CosmosMsg::Wasm(WasmMsg::Execute {
+                contract_addr: config.staking_contract.to_string(),
+                msg: to_binary(&nexus_prism_protocol::staking::AnyoneMsg::Unbond {
+                    amount: compounding_token_to_withdraw.into(),
+                })?,
+                funds: vec![],
+            }))
             .add_message(CosmosMsg::Wasm(WasmMsg::Execute {
                 contract_addr: config.compounding_token.to_string(),
                 msg: to_binary(&Cw20ExecuteMsg::Transfer {
@@ -270,6 +309,15 @@ pub fn execute_withdraw(deps: DepsMut, env: Env) -> StdResult<Response> {
                 withdraw_action.auto_compounding_token_amount,
             ))
     } else {
-        Ok(Response::new())
+        Ok(resp)
     }
+}
+pub fn get_compounding_token_balance(deps: Deps, env: Env, addr: &Addr) -> StdResult<Uint128> {
+    let staker: StakerResponse = deps.querier.query_wasm_smart(
+        addr,
+        &nexus_prism_protocol::staking::QueryMsg::Staker {
+            address: env.contract.address.to_string(),
+        },
+    )?;
+    Ok(staker.balance)
 }

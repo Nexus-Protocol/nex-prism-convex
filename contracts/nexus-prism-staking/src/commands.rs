@@ -5,7 +5,10 @@ use cosmwasm_std::{
     StdError, Uint128, WasmMsg,
 };
 use cw_asset::Asset;
-use nexus_prism_protocol::{common::query_token_balance, staking::Cw20HookMsg};
+use nexus_prism_protocol::{
+    common::{query_token_balance, transfer},
+    staking::Cw20HookMsg,
+};
 
 use crate::{
     error::ContractError,
@@ -75,7 +78,7 @@ pub fn update_config(
     staking_token: Option<String>,
     rewarder: Option<String>,
     reward_token: Option<String>,
-    staker_reward_pair: Option<String>,
+    staker_reward_pair: Option<Vec<String>>,
 ) -> ContractResult<Response> {
     if let Some(owner) = owner {
         config.owner = if owner.is_empty() {
@@ -98,7 +101,10 @@ pub fn update_config(
     }
 
     if let Some(staker_reward_pair) = staker_reward_pair {
-        config.staker_reward_pair = deps.api.addr_validate(&staker_reward_pair)?;
+        config.staker_reward_pair = staker_reward_pair
+            .into_iter()
+            .map(|p| deps.api.addr_validate(&p))
+            .collect::<Result<Vec<_>, _>>()?;
     }
 
     save_config(deps.storage, &config)?;
@@ -285,19 +291,30 @@ fn claim_rewards_logic(
     staker.virtual_index = state.virtual_rewards.global_index;
     save_staker(deps.storage, staker_addr, &staker)?;
 
-    Ok(Response::new()
-        .add_message(Asset::cw20(config.reward_token, rewards).send_msg(
-            config.staker_reward_pair,
+    let mut resp = Response::new()
+        .add_attribute("action", "claim_reward")
+        .add_attribute("staker", staker_addr)
+        .add_attribute("recipient", recipient)
+        .add_attribute("rewards", rewards);
+
+    if !config.staker_reward_pair.is_empty() {
+        resp = resp.add_message(Asset::cw20(config.reward_token, rewards).send_msg(
+            config.staker_reward_pair[0].clone(),
             to_binary(&astroport::pair::Cw20HookMsg::Swap {
                 belief_price: None,
                 max_spread: None,
                 to: Some(recipient.to_string()),
             })?,
-        )?)
-        .add_attribute("action", "claim_reward")
-        .add_attribute("staker", staker_addr)
-        .add_attribute("recipient", recipient)
-        .add_attribute("rewards", rewards))
+        )?);
+    } else {
+        resp = resp.add_submessage(transfer(
+            config.reward_token.to_string(),
+            recipient.to_string(),
+            rewards,
+        )?);
+    }
+
+    Ok(resp)
 }
 
 pub fn increase_balance(

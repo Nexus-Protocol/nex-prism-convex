@@ -1,16 +1,19 @@
 use std::cmp::Ordering;
 
+use astroport::asset::AssetInfo;
 use cosmwasm_bignumber::{Decimal256, Uint256};
 #[cfg(not(feature = "library"))]
 use cosmwasm_std::entry_point;
 use cosmwasm_std::{
-    from_binary, to_binary, Addr, Binary, Decimal, Deps, DepsMut, Env, MessageInfo, Reply,
-    Response, StdError, StdResult, SubMsg, Uint128, WasmMsg,
+    from_binary, to_binary, Addr, Binary, CosmosMsg, Decimal, Deps, DepsMut, Env, MessageInfo,
+    Reply, Response, StdError, StdResult, SubMsg, Uint128, WasmMsg,
 };
 use cw0::nonpayable;
 use cw2::{get_contract_version, set_contract_version};
-use cw20::{Cw20ExecuteMsg, Cw20ReceiveMsg};
+use cw20::{Cw20ExecuteMsg, Cw20ReceiveMsg, MinterResponse};
 use nexus_prism_protocol::common::{div, get_price, mint, mul, query_token_balance, transfer};
+use nexus_prism_protocol::protobuf::Message;
+use nexus_prism_protocol::reply_response::MsgInstantiateContractResponse;
 use nexus_prism_protocol::vault::{
     ConfigResponse, Cw20HookMsg, ExecuteMsg, GovernanceMsg, InstantiateMsg, MigrateMsg, QueryMsg,
 };
@@ -19,35 +22,48 @@ use prism_protocol::xprism_boost::UserInfo;
 
 use crate::error::ContractError;
 use crate::state::{
-    save_state, Config, GovernanceUpdateState, ReplyContext, State, CONFIG, GOVERNANCE_UPDATE,
-    REPLY_CONTEXT, STATE,
+    save_state, set_nexprism, set_nexprism_staking, set_nyluna, set_psi_staking,
+    set_xprism_nexprism_pair, set_yluna_staking, Config, GovernanceUpdateState, ReplyContext,
+    State, CONFIG, GOVERNANCE_UPDATE, REPLY_CONTEXT, STATE,
 };
 
 const CONTRACT_NAME: &str = "nexus.protocol:nex-prism-convex";
 const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
+pub const INIT_NYLUNA_REPLY_ID: u64 = 3;
+pub const INIT_NEXPRISM_REPLY_ID: u64 = 4;
+pub const INIT_NEXPRISM_XPRISM_STAKING_REPLY_ID: u64 = 5;
+pub const INIT_PSI_NEXPRISM_STAKING_REPLY_ID: u64 = 6;
+pub const INIT_YLUNA_PRISM_STAKING_REPLY_ID: u64 = 7;
+pub const INIT_NEXPRISM_XPRISM_PAIR_REPLY_ID: u64 = 8;
+
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn instantiate(
     deps: DepsMut,
-    _env: Env,
+    env: Env,
     info: MessageInfo,
     msg: InstantiateMsg,
 ) -> Result<Response, ContractError> {
     nonpayable(&info)?;
 
     let config = Config {
-        owner: info.sender,
+        owner: info.sender.clone(),
         governance: deps.api.addr_validate(&msg.governance)?,
+        psi_token: deps.api.addr_validate(&msg.psi_token)?,
         xprism_token: deps.api.addr_validate(&msg.xprism_token)?,
-        nexprism_token: deps.api.addr_validate(&msg.nexprism_token)?,
+        nexprism_token: Addr::unchecked(""),
         yluna_token: deps.api.addr_validate(&msg.yluna_token)?,
-        nyluna_token: deps.api.addr_validate(&msg.nyluna_token)?,
+        nyluna_token: Addr::unchecked(""),
         prism_token: deps.api.addr_validate(&msg.prism_token)?,
         prism_launch_pool: deps.api.addr_validate(&msg.prism_launch_pool)?,
         prism_xprism_boost: deps.api.addr_validate(&msg.prism_xprism_boost)?,
-        nexprism_xprism_staking: deps.api.addr_validate(&msg.nexprism_xprism_staking)?,
-        psi_nexprism_staking: deps.api.addr_validate(&msg.psi_nexprism_staking)?,
-        yluna_prism_staking: deps.api.addr_validate(&msg.yluna_prism_staking)?,
+        astroport_factory: deps.api.addr_validate(&msg.astroport_factory)?,
+        staking_code_id: msg.staking_code_id,
+        staking_admin: info.sender,
+        nexprism_xprism_staking: Addr::unchecked(""),
+        psi_nexprism_staking: Addr::unchecked(""),
+        yluna_prism_staking: Addr::unchecked(""),
+        xprism_nexprism_pair: Addr::unchecked(""),
         xprism_prism_pair: deps.api.addr_validate(&msg.xprism_prism_pair)?,
         yluna_prism_pair: deps.api.addr_validate(&msg.yluna_prism_pair)?,
         rewards_distribution_update_period: msg.rewards_distribution_update_period,
@@ -72,7 +88,48 @@ pub fn instantiate(
 
     set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
 
-    Ok(Response::new().add_attribute("action", "instantiate"))
+    Ok(Response::new()
+        .add_submessage(SubMsg::reply_on_success(
+            CosmosMsg::Wasm(WasmMsg::Instantiate {
+                admin: Some(config.governance.to_string()),
+                code_id: msg.cw20_token_code_id,
+                msg: to_binary(&cw20_base::msg::InstantiateMsg {
+                    name: "yLuna representation in Nexus-Prism".to_owned(),
+                    symbol: "nyLuna".to_owned(),
+                    decimals: 6,
+                    initial_balances: vec![],
+                    mint: Some(MinterResponse {
+                        minter: env.contract.address.to_string(),
+                        cap: None,
+                    }),
+                    marketing: None,
+                })?,
+                funds: vec![],
+                label: "".to_string(),
+            }),
+            INIT_NYLUNA_REPLY_ID,
+        ))
+        .add_submessage(SubMsg::reply_on_success(
+            CosmosMsg::Wasm(WasmMsg::Instantiate {
+                admin: Some(config.governance.to_string()),
+                code_id: msg.cw20_token_code_id,
+                msg: to_binary(&cw20_base::msg::InstantiateMsg {
+                    name: "xPrism representation in Nexus-Prism".to_owned(),
+                    symbol: "nexPrism".to_owned(),
+                    decimals: 6,
+                    initial_balances: vec![],
+                    mint: Some(MinterResponse {
+                        minter: env.contract.address.to_string(),
+                        cap: None,
+                    }),
+                    marketing: None,
+                })?,
+                funds: vec![],
+                label: "".to_string(),
+            }),
+            INIT_NEXPRISM_REPLY_ID,
+        ))
+        .add_attribute("action", "instantiate"))
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
@@ -243,33 +300,25 @@ fn update_rewards_distribution(
                 if state.nexprism_stakers_reward_ratio > config.max_nexprism_stakers_reward_ratio {
                     return Ok(());
                 }
-                if state.yluna_depositors_reward_ratio < config.rewards_distribution_update_step {
-                    return Ok(());
-                }
-                state.yluna_depositors_reward_ratio = div(
-                    state.yluna_depositors_reward_ratio,
-                    config.rewards_distribution_update_step,
-                );
+                state.yluna_depositors_reward_ratio = Decimal::one()
+                    - state.nexprism_stakers_reward_ratio
+                    - state.psi_stakers_reward_ratio;
                 if state.yluna_depositors_reward_ratio < config.min_yluna_depositors_reward_ratio {
                     return Ok(());
                 }
             }
             Value::Positive => {
-                state.yluna_depositors_reward_ratio = mul(
-                    state.yluna_depositors_reward_ratio,
-                    config.rewards_distribution_update_step,
-                );
-                if state.yluna_depositors_reward_ratio > config.max_yluna_depositors_reward_ratio {
-                    return Ok(());
-                }
-                if state.nexprism_stakers_reward_ratio < config.rewards_distribution_update_step {
-                    return Ok(());
-                }
                 state.nexprism_stakers_reward_ratio = div(
                     state.nexprism_stakers_reward_ratio,
                     config.rewards_distribution_update_step,
                 );
                 if state.nexprism_stakers_reward_ratio < config.min_nexprism_stakers_reward_ratio {
+                    return Ok(());
+                }
+                state.yluna_depositors_reward_ratio = Decimal::one()
+                    - state.nexprism_stakers_reward_ratio
+                    - state.psi_stakers_reward_ratio;
+                if state.yluna_depositors_reward_ratio > config.max_yluna_depositors_reward_ratio {
                     return Ok(());
                 }
             }
@@ -476,6 +525,178 @@ pub fn reply(deps: DepsMut, env: Env, msg: Reply) -> Result<Response, ContractEr
     let state = STATE.load(deps.storage)?;
 
     match msg.id {
+        INIT_NYLUNA_REPLY_ID => {
+            let data = msg.result.unwrap().data.unwrap();
+            let res: MsgInstantiateContractResponse = Message::parse_from_bytes(data.as_slice())
+                .map_err(|_| {
+                    StdError::parse_err("MsgInstantiateContractResponse", "failed to parse data")
+                })?;
+
+            let nyluna_token = res.get_contract_address();
+            set_nyluna(deps.storage, Addr::unchecked(nyluna_token))?;
+
+            Ok(Response::new()
+                .add_submessage(SubMsg::reply_on_success(
+                    CosmosMsg::Wasm(WasmMsg::Instantiate {
+                        admin: Some(config.staking_admin.to_string()),
+                        code_id: config.staking_code_id,
+                        msg: to_binary(&nexus_prism_protocol::staking::InstantiateMsg {
+                            owner: None,
+                            staking_token: config.nyluna_token.to_string(),
+                            rewarder: env.contract.address.to_string(),
+                            reward_token: config.prism_token.to_string(),
+                            staker_reward_pair: vec![],
+                            governance: config.governance.to_string(),
+                        })?,
+                        funds: vec![],
+                        label: "".to_string(),
+                    }),
+                    INIT_YLUNA_PRISM_STAKING_REPLY_ID,
+                ))
+                .add_attributes(vec![
+                    ("action", "nyluna_token_initialized"),
+                    ("nyluna_token_addr", nyluna_token),
+                ]))
+        }
+
+        INIT_NEXPRISM_REPLY_ID => {
+            let data = msg.result.unwrap().data.unwrap();
+            let res: MsgInstantiateContractResponse = Message::parse_from_bytes(data.as_slice())
+                .map_err(|_| {
+                    StdError::parse_err("MsgInstantiateContractResponse", "failed to parse data")
+                })?;
+
+            let nexprism_token = res.get_contract_address();
+            set_nexprism(deps.storage, Addr::unchecked(nexprism_token))?;
+
+            Ok(Response::new()
+                .add_submessage(SubMsg::reply_on_success(
+                    CosmosMsg::Wasm(WasmMsg::Instantiate {
+                        admin: Some(config.staking_admin.to_string()),
+                        code_id: config.staking_code_id,
+                        msg: to_binary(&nexus_prism_protocol::staking::InstantiateMsg {
+                            owner: None,
+                            staking_token: config.nexprism_token.to_string(),
+                            rewarder: env.contract.address.to_string(),
+                            reward_token: config.prism_token.to_string(),
+                            staker_reward_pair: vec![config.xprism_prism_pair.to_string()],
+                            governance: config.governance.to_string(),
+                        })?,
+                        funds: vec![],
+                        label: "".to_string(),
+                    }),
+                    INIT_NEXPRISM_XPRISM_STAKING_REPLY_ID,
+                ))
+                .add_submessage(SubMsg::reply_on_success(
+                    CosmosMsg::Wasm(WasmMsg::Execute {
+                        contract_addr: config.astroport_factory.to_string(),
+                        msg: to_binary(&astroport::factory::ExecuteMsg::CreatePair {
+                            pair_type: astroport::factory::PairType::Xyk {},
+                            asset_infos: [
+                                AssetInfo::Token {
+                                    contract_addr: config.xprism_token,
+                                },
+                                AssetInfo::Token {
+                                    contract_addr: config.nexprism_token,
+                                },
+                            ],
+                            init_params: None,
+                        })?,
+                        funds: vec![],
+                    }),
+                    INIT_NEXPRISM_XPRISM_PAIR_REPLY_ID,
+                ))
+                .add_attributes(vec![
+                    ("action", "nexprism_token_initialized"),
+                    ("nexprism_token_addr", nexprism_token),
+                ]))
+        }
+
+        INIT_NEXPRISM_XPRISM_PAIR_REPLY_ID => {
+            let data = msg.result.unwrap().data.unwrap();
+            let res: MsgInstantiateContractResponse = Message::parse_from_bytes(data.as_slice())
+                .map_err(|_| {
+                    StdError::parse_err("MsgInstantiateContractResponse", "failed to parse data")
+                })?;
+
+            let addr = res.get_contract_address();
+            set_xprism_nexprism_pair(deps.storage, Addr::unchecked(addr))?;
+
+            Ok(Response::new()
+                .add_submessage(SubMsg::reply_on_success(
+                    CosmosMsg::Wasm(WasmMsg::Instantiate {
+                        admin: Some(config.staking_admin.to_string()),
+                        code_id: config.staking_code_id,
+                        msg: to_binary(&nexus_prism_protocol::staking::InstantiateMsg {
+                            owner: Some(config.governance.to_string()),
+                            staking_token: config.psi_token.to_string(),
+                            rewarder: env.contract.address.to_string(),
+                            reward_token: config.prism_token.to_string(),
+                            staker_reward_pair: vec![
+                                config.xprism_prism_pair.to_string(),
+                                config.xprism_nexprism_pair.to_string(),
+                            ],
+                            governance: config.governance.to_string(),
+                        })?,
+                        funds: vec![],
+                        label: "".to_string(),
+                    }),
+                    INIT_PSI_NEXPRISM_STAKING_REPLY_ID,
+                ))
+                .add_attributes(vec![
+                    ("action", "nexprism_xprism_pair_initialized"),
+                    ("nexprism_xprism_pair_addr", addr),
+                ]))
+        }
+
+        INIT_NEXPRISM_XPRISM_STAKING_REPLY_ID => {
+            let data = msg.result.unwrap().data.unwrap();
+            let res: MsgInstantiateContractResponse = Message::parse_from_bytes(data.as_slice())
+                .map_err(|_| {
+                    StdError::parse_err("MsgInstantiateContractResponse", "failed to parse data")
+                })?;
+
+            let addr = res.get_contract_address();
+            set_nexprism_staking(deps.storage, Addr::unchecked(addr))?;
+
+            Ok(Response::new().add_attributes(vec![
+                ("action", "nexprism_staking_initialized"),
+                ("nexprism_staking_addr", addr),
+            ]))
+        }
+
+        INIT_PSI_NEXPRISM_STAKING_REPLY_ID => {
+            let data = msg.result.unwrap().data.unwrap();
+            let res: MsgInstantiateContractResponse = Message::parse_from_bytes(data.as_slice())
+                .map_err(|_| {
+                    StdError::parse_err("MsgInstantiateContractResponse", "failed to parse data")
+                })?;
+
+            let addr = res.get_contract_address();
+            set_psi_staking(deps.storage, Addr::unchecked(addr))?;
+
+            Ok(Response::new().add_attributes(vec![
+                ("action", "psi_staking_initialized"),
+                ("psi_staking_addr", addr),
+            ]))
+        }
+
+        INIT_YLUNA_PRISM_STAKING_REPLY_ID => {
+            let data = msg.result.unwrap().data.unwrap();
+            let res: MsgInstantiateContractResponse = Message::parse_from_bytes(data.as_slice())
+                .map_err(|_| {
+                    StdError::parse_err("MsgInstantiateContractResponse", "failed to parse data")
+                })?;
+
+            let addr = res.get_contract_address();
+            set_yluna_staking(deps.storage, Addr::unchecked(addr))?;
+
+            Ok(Response::new().add_attributes(vec![
+                ("action", "yluna_staking_initialized"),
+                ("yluna_staking_addr", addr),
+            ]))
+        }
+
         VIRTUAL_CLAIM_REPLY_ID => {
             let reply_context = REPLY_CONTEXT.load(deps.storage)?;
             let reward_info: RewardInfoResponse = deps.querier.query_wasm_smart(
@@ -526,7 +747,7 @@ pub fn reply(deps: DepsMut, env: Env, msg: Reply) -> Result<Response, ContractEr
 
             Ok(Response::new()
                 .add_submessage(transfer(
-                    config.xprism_token.to_string(),
+                    config.prism_token.to_string(),
                     config.nexprism_xprism_staking.to_string(),
                     nexprism_stakers_rewards,
                 )?)
@@ -536,7 +757,7 @@ pub fn reply(deps: DepsMut, env: Env, msg: Reply) -> Result<Response, ContractEr
                     yluna_depositors_rewards,
                 )?)
                 .add_submessage(transfer(
-                    config.nexprism_token.to_string(),
+                    config.prism_token.to_string(),
                     config.psi_nexprism_staking.to_string(),
                     psi_stakers_rewards,
                 )?)

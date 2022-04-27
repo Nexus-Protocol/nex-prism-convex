@@ -49,6 +49,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "14c189c53d098945499cdfa7ecc63567cf3886b3332b312a5b4585d8d3a6a610"
 
 [[package]]
+name = "bytes"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c4872d67bab6358e59559027aa3b9157c53d9358c51423c17554809a8858e0f8"
+
+[[package]]
 name = "cfg-if"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -501,6 +507,7 @@ dependencies = [
  "cosmwasm-storage",
  "cw20 0.9.1",
  "cw20-base",
+ "protobuf",
  "schemars",
  "serde",
  "thiserror",
@@ -529,6 +536,7 @@ dependencies = [
 name = "nexus-prism-vault"
 version = "0.1.0"
 dependencies = [
+ "astroport",
  "cosmwasm-bignumber",
  "cosmwasm-schema",
  "cosmwasm-std",
@@ -537,6 +545,7 @@ dependencies = [
  "cw0 0.9.1",
  "cw2",
  "cw20 0.9.1",
+ "cw20-base",
  "nexus-prism-protocol",
  "prism-protocol",
  "schemars",
@@ -581,6 +590,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c7342d5883fbccae1cc37a2353b09c87c9b0f3afd73f5fb9bba687a1f733b029"
 dependencies = [
  "unicode-xid",
+]
+
+[[package]]
+name = "protobuf"
+version = "2.27.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cf7e6d18738ecd0902d30d1ad232c9125985a3422929b16c65517b38adc14f96"
+dependencies = [
+ "bytes",
 ]
 
 [[package]]
