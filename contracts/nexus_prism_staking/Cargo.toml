@@ -20,6 +20,7 @@ crate-type = ["cdylib", "rlib"]
 backtraces = ["cosmwasm-std/backtraces"]
 # use library feature to disable all instantiate/execute/query exports
 library = []
+integration_tests_build = ["nexus-prism-protocol/integration_tests_build"]
 
 [dependencies]
 astroport = "1.0.1"
