@@ -18,6 +18,7 @@ crate-type = ["cdylib", "rlib"]
 [features]
 # for more explicit tests, cargo test --features=backtraces
 backtraces = ["cosmwasm-std/backtraces"]
+integration_tests_build = ["nexus-prism-protocol/integration_tests_build"]
 
 [dependencies]
 cosmwasm-bignumber = "2.2.0"
