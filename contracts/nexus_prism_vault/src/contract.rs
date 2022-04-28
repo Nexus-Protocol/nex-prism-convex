@@ -72,6 +72,7 @@ pub fn instantiate(
         max_nexprism_stakers_reward_ratio: msg.nexprism_stakers_reward_ratio,
         min_yluna_depositors_reward_ratio: msg.yluna_depositors_reward_ratio,
         max_yluna_depositors_reward_ratio: msg.yluna_depositors_reward_ratio,
+        xprism_nexprism_amp_coef: msg.xprism_nexprism_amp_coef,
     };
     CONFIG.save(deps.storage, &config)?;
 
@@ -542,7 +543,7 @@ pub fn reply(deps: DepsMut, env: Env, msg: Reply) -> Result<Response, ContractEr
                         code_id: config.staking_code_id,
                         msg: to_binary(&nexus_prism_protocol::staking::InstantiateMsg {
                             owner: None,
-                            staking_token: config.nyluna_token.to_string(),
+                            staking_token: nyluna_token.to_owned(),
                             rewarder: env.contract.address.to_string(),
                             reward_token: config.prism_token.to_string(),
                             staker_reward_pair: vec![],
@@ -576,7 +577,7 @@ pub fn reply(deps: DepsMut, env: Env, msg: Reply) -> Result<Response, ContractEr
                         code_id: config.staking_code_id,
                         msg: to_binary(&nexus_prism_protocol::staking::InstantiateMsg {
                             owner: None,
-                            staking_token: config.nexprism_token.to_string(),
+                            staking_token: nexprism_token.to_owned(),
                             rewarder: env.contract.address.to_string(),
                             reward_token: config.prism_token.to_string(),
                             staker_reward_pair: vec![config.xprism_prism_pair.to_string()],
@@ -591,16 +592,18 @@ pub fn reply(deps: DepsMut, env: Env, msg: Reply) -> Result<Response, ContractEr
                     CosmosMsg::Wasm(WasmMsg::Execute {
                         contract_addr: config.astroport_factory.to_string(),
                         msg: to_binary(&astroport::factory::ExecuteMsg::CreatePair {
-                            pair_type: astroport::factory::PairType::Xyk {},
+                            pair_type: astroport::factory::PairType::Stable {},
                             asset_infos: [
                                 AssetInfo::Token {
                                     contract_addr: config.xprism_token,
                                 },
                                 AssetInfo::Token {
-                                    contract_addr: config.nexprism_token,
+                                    contract_addr: Addr::unchecked(nexprism_token),
                                 },
                             ],
-                            init_params: None,
+                            init_params: Some(to_binary(&astroport::pair::StablePoolParams {
+                                amp: config.xprism_nexprism_amp_coef,
+                            })?),
                         })?,
                         funds: vec![],
                     }),
@@ -613,14 +616,27 @@ pub fn reply(deps: DepsMut, env: Env, msg: Reply) -> Result<Response, ContractEr
         }
 
         INIT_NEXPRISM_XPRISM_PAIR_REPLY_ID => {
-            let data = msg.result.unwrap().data.unwrap();
-            let res: MsgInstantiateContractResponse = Message::parse_from_bytes(data.as_slice())
-                .map_err(|_| {
-                    StdError::parse_err("MsgInstantiateContractResponse", "failed to parse data")
+            let events = msg
+                .result
+                .into_result()
+                .map_err(|err| {
+                    StdError::generic_err(format!(
+                        "Error creating xPRISM <-> nexPRISM pair: {}",
+                        err
+                    ))
+                })?
+                .events;
+
+            let xprism_nexprism_pair = events
+                .into_iter()
+                .flat_map(|event| event.attributes)
+                .find(|attr| attr.key == "pair_contract_addr")
+                .map(|attr| attr.value)
+                .ok_or_else(|| {
+                    StdError::generic_err("Failed to create xPRISM <-> nexPRISM swap pair")
                 })?;
 
-            let addr = res.get_contract_address();
-            set_xprism_nexprism_pair(deps.storage, Addr::unchecked(addr))?;
+            set_xprism_nexprism_pair(deps.storage, Addr::unchecked(&xprism_nexprism_pair))?;
 
             Ok(Response::new()
                 .add_submessage(SubMsg::reply_on_success(
@@ -634,7 +650,7 @@ pub fn reply(deps: DepsMut, env: Env, msg: Reply) -> Result<Response, ContractEr
                             reward_token: config.prism_token.to_string(),
                             staker_reward_pair: vec![
                                 config.xprism_prism_pair.to_string(),
-                                config.xprism_nexprism_pair.to_string(),
+                                xprism_nexprism_pair.clone(),
                             ],
                             governance: config.governance.to_string(),
                         })?,
@@ -645,7 +661,7 @@ pub fn reply(deps: DepsMut, env: Env, msg: Reply) -> Result<Response, ContractEr
                 ))
                 .add_attributes(vec![
                     ("action", "nexprism_xprism_pair_initialized"),
-                    ("nexprism_xprism_pair_addr", addr),
+                    ("nexprism_xprism_pair_addr", &xprism_nexprism_pair),
                 ]))
         }
 
@@ -1014,12 +1030,14 @@ fn query_config(deps: Deps) -> StdResult<ConfigResponse> {
         xprism_token: config.xprism_token.to_string(),
         nexprism_token: config.nexprism_token.to_string(),
         yluna_token: config.yluna_token.to_string(),
+        nyluna_token: config.nyluna_token.to_string(),
         prism_token: config.prism_token.to_string(),
         prism_launch_pool: config.prism_launch_pool.to_string(),
         prism_xprism_boost: config.prism_xprism_boost.to_string(),
         nexprism_xprism_staking: config.nexprism_xprism_staking.to_string(),
         psi_nexprism_staking: config.psi_nexprism_staking.to_string(),
         yluna_prism_staking: config.yluna_prism_staking.to_string(),
+        xprism_nexprism_pair: config.xprism_nexprism_pair.to_string(),
         xprism_prism_pair: config.xprism_prism_pair.to_string(),
         yluna_prism_pair: config.yluna_prism_pair.to_string(),
         rewards_distribution_update_period: config.rewards_distribution_update_period,
