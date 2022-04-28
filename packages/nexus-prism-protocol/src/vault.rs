@@ -11,6 +11,7 @@ pub struct InstantiateMsg {
     pub cw20_token_code_id: u64,
     pub staking_code_id: u64,
     pub astroport_factory: String,
+    pub xprism_nexprism_amp_coef: u64,
     pub xprism_token: String,
     pub yluna_token: String,
     pub prism_token: String,

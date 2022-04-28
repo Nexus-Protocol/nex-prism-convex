@@ -18,6 +18,7 @@ pub struct Config {
     pub prism_launch_pool: Addr,
     pub prism_xprism_boost: Addr,
     pub astroport_factory: Addr,
+    pub xprism_nexprism_amp_coef: u64,
     pub staking_code_id: u64,
     pub staking_admin: Addr,
     pub nexprism_xprism_staking: Addr,

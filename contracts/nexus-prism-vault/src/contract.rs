@@ -72,6 +72,7 @@ pub fn instantiate(
         max_nexprism_stakers_reward_ratio: msg.nexprism_stakers_reward_ratio,
         min_yluna_depositors_reward_ratio: msg.yluna_depositors_reward_ratio,
         max_yluna_depositors_reward_ratio: msg.yluna_depositors_reward_ratio,
+        xprism_nexprism_amp_coef: msg.xprism_nexprism_amp_coef,
     };
     CONFIG.save(deps.storage, &config)?;
 
@@ -600,7 +601,9 @@ pub fn reply(deps: DepsMut, env: Env, msg: Reply) -> Result<Response, ContractEr
                                     contract_addr: Addr::unchecked(nexprism_token),
                                 },
                             ],
-                            init_params: None,
+                            init_params: Some(to_binary(&astroport::pair::StablePoolParams {
+                                amp: config.xprism_nexprism_amp_coef,
+                            })?),
                         })?,
                         funds: vec![],
                     }),
