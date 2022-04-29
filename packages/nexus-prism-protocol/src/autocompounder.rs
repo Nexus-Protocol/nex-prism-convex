@@ -7,7 +7,6 @@ use cw20::Cw20ReceiveMsg;
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct InstantiateMsg {
     pub compounding_token: String,
-    pub auto_compounding_token: String,
     pub reward_token: String,
     pub reward_compound_pair: String,
     pub governance_contract_addr: String,

@@ -9,7 +9,9 @@ pub struct Config {
     pub staking_token: Addr,
     pub rewarder: Addr,
     pub reward_token: Addr,
-    pub staker_reward_pair: Vec<Addr>,
+    pub staker_reward_pair: Option<Addr>,
+    pub xprism_token: Option<Addr>,
+    pub xprism_nexprism_pair: Option<Addr>,
     pub governance: Addr,
 }
 

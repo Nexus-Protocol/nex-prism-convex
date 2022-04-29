@@ -1,7 +1,8 @@
 use cosmwasm_std::{
-    entry_point, to_binary, Binary, Decimal, Deps, DepsMut, Env, MessageInfo, Response, StdResult,
-    Uint128,
+    entry_point, to_binary, Binary, Decimal, Deps, DepsMut, Env, MessageInfo, Reply, Response,
+    StdResult, Uint128,
 };
+use cw_asset::Asset;
 
 use crate::{
     commands,
@@ -10,9 +11,12 @@ use crate::{
     state::{load_config, save_config, save_state, RewardState, State},
 };
 use crate::{state::Config, ContractResult};
-use nexus_prism_protocol::staking::{
-    AnyoneMsg, ExecuteMsg, GovernanceMsg, InstantiateMsg, MigrateMsg, OwnerMsg, QueryMsg,
-    RewarderMsg,
+use nexus_prism_protocol::{
+    common::query_token_balance,
+    staking::{
+        AnyoneMsg, ExecuteMsg, GovernanceMsg, InstantiateMsg, MigrateMsg, OwnerMsg, QueryMsg,
+        RewarderMsg,
+    },
 };
 
 #[entry_point]
@@ -32,9 +36,16 @@ pub fn instantiate(
         reward_token: deps.api.addr_validate(&msg.reward_token)?,
         staker_reward_pair: msg
             .staker_reward_pair
-            .into_iter()
             .map(|p| deps.api.addr_validate(&p))
-            .collect::<Result<Vec<_>, _>>()?,
+            .transpose()?,
+        xprism_token: msg
+            .xprism_token
+            .map(|p| deps.api.addr_validate(&p))
+            .transpose()?,
+        xprism_nexprism_pair: msg
+            .xprism_nexprism_pair
+            .map(|p| deps.api.addr_validate(&p))
+            .transpose()?,
         governance: deps.api.addr_validate(&msg.governance)?,
     };
 
@@ -127,6 +138,7 @@ pub fn execute(
                     rewarder,
                     reward_token,
                     staker_reward_pair,
+                    xprism_nexprism_pair,
                 } => commands::update_config(
                     deps,
                     config,
@@ -135,6 +147,7 @@ pub fn execute(
                     rewarder,
                     reward_token,
                     staker_reward_pair,
+                    xprism_nexprism_pair,
                 ),
 
                 GovernanceMsg::UpdateGovernanceContract {
@@ -149,6 +162,32 @@ pub fn execute(
             }
         }
     }
+}
+
+pub const FIRST_SWAP_REPLY_ID: u64 = 1;
+
+#[cfg_attr(not(feature = "library"), entry_point)]
+pub fn reply(deps: DepsMut, env: Env, _msg: Reply) -> ContractResult<Response> {
+    let config = load_config(deps.storage)?;
+
+    Ok(Response::new().add_message(
+        Asset::cw20(
+            config.xprism_token.clone().unwrap(),
+            query_token_balance(
+                deps.as_ref(),
+                &config.xprism_token.unwrap(),
+                &env.contract.address,
+            ),
+        )
+        .send_msg(
+            config.xprism_nexprism_pair.unwrap(),
+            to_binary(&astroport::pair::Cw20HookMsg::Swap {
+                belief_price: None,
+                max_spread: None,
+                to: None,
+            })?,
+        )?,
+    ))
 }
 
 #[entry_point]

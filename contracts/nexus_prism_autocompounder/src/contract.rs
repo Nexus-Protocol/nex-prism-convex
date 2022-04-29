@@ -7,10 +7,6 @@ use nexus_prism_protocol::common::{query_token_balance, query_token_supply};
 use protobuf::Message;
 
 use crate::commands::get_compounding_token_balance;
-use crate::msg::{
-    AstroportCw20HookMsg, AutoCompoundingTokenValueResponse, CompoundingTokenValueResponse,
-    ConfigResponse, ExecuteMsg, GovernanceMsg, InstantiateMsg, MigrateMsg, QueryMsg,
-};
 use crate::state::{config_set_auto_compounding_token, Config};
 use crate::{
     commands,
@@ -19,6 +15,10 @@ use crate::{
 };
 use cosmwasm_bignumber::{Decimal256, Uint256};
 use cw20::{Cw20ExecuteMsg, MinterResponse, TokenInfoResponse};
+use nexus_prism_protocol::autocompounder::{
+    AstroportCw20HookMsg, AutoCompoundingTokenValueResponse, CompoundingTokenValueResponse,
+    ConfigResponse, ExecuteMsg, GovernanceMsg, InstantiateMsg, MigrateMsg, QueryMsg,
+};
 use std::convert::TryFrom;
 
 #[entry_point]

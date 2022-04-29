@@ -1,6 +1,5 @@
 use crate::{
     commands,
-    msg::Cw20HookMsg,
     state::{
         load_config, load_gov_update, load_withdraw_action, remove_gov_update,
         remove_withdraw_action, store_config, store_gov_update, store_withdraw_action, Config,
@@ -15,6 +14,7 @@ use cosmwasm_std::{
 };
 use cw20::{Cw20ExecuteMsg, Cw20ReceiveMsg};
 use nexus_prism_protocol::{
+    autocompounder::Cw20HookMsg,
     common::{get_time, query_token_balance, query_token_supply},
     staking::StakerResponse,
 };

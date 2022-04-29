@@ -9,7 +9,9 @@ pub struct InstantiateMsg {
     pub staking_token: String,
     pub rewarder: String,
     pub reward_token: String,
-    pub staker_reward_pair: Vec<String>,
+    pub staker_reward_pair: Option<String>,
+    pub xprism_token: Option<String>,
+    pub xprism_nexprism_pair: Option<String>,
     pub governance: String,
 }
 
@@ -54,7 +56,8 @@ pub enum GovernanceMsg {
         staking_token: Option<String>,
         rewarder: Option<String>,
         reward_token: Option<String>,
-        staker_reward_pair: Option<Vec<String>>,
+        staker_reward_pair: Option<String>,
+        xprism_nexprism_pair: Option<String>,
     },
     UpdateGovernanceContract {
         gov_addr: String,
@@ -114,3 +117,22 @@ pub struct StakerResponse {
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct MigrateMsg {}
+
+// ================================
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum OwnerQueryMsg {
+    State {},
+    Staker { address: String },
+}
+
+#[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema)]
+pub struct OwnerStateResponse {
+    pub total_deposit: Uint128,
+}
+
+#[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema)]
+pub struct OwnerStakerResponse {
+    pub balance: Uint128,
+}

@@ -1,16 +1,17 @@
 use std::cmp::min;
 
 use cosmwasm_std::{
-    from_binary, to_binary, Addr, BlockInfo, Decimal, DepsMut, Env, MessageInfo, Response,
-    StdError, Uint128, WasmMsg,
+    from_binary, to_binary, Addr, BlockInfo, Decimal, Deps, DepsMut, Env, MessageInfo, Response,
+    StdError, SubMsg, Uint128, WasmMsg,
 };
 use cw_asset::Asset;
 use nexus_prism_protocol::{
     common::{query_token_balance, transfer},
-    staking::Cw20HookMsg,
+    staking::{Cw20HookMsg, OwnerQueryMsg, OwnerStakerResponse, OwnerStateResponse},
 };
 
 use crate::{
+    contract::FIRST_SWAP_REPLY_ID,
     error::ContractError,
     math::decimal_summation_in_256,
     state::{
@@ -71,6 +72,7 @@ pub fn unbond(
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn update_config(
     deps: DepsMut,
     mut config: Config,
@@ -78,7 +80,8 @@ pub fn update_config(
     staking_token: Option<String>,
     rewarder: Option<String>,
     reward_token: Option<String>,
-    staker_reward_pair: Option<Vec<String>>,
+    staker_reward_pair: Option<String>,
+    xprism_nexprism_pair: Option<String>,
 ) -> ContractResult<Response> {
     if let Some(owner) = owner {
         config.owner = if owner.is_empty() {
@@ -101,10 +104,19 @@ pub fn update_config(
     }
 
     if let Some(staker_reward_pair) = staker_reward_pair {
-        config.staker_reward_pair = staker_reward_pair
-            .into_iter()
-            .map(|p| deps.api.addr_validate(&p))
-            .collect::<Result<Vec<_>, _>>()?;
+        config.staker_reward_pair = if staker_reward_pair.is_empty() {
+            None
+        } else {
+            Some(deps.api.addr_validate(&staker_reward_pair)?)
+        }
+    }
+
+    if let Some(xprism_nexprism_pair) = xprism_nexprism_pair {
+        config.xprism_nexprism_pair = if xprism_nexprism_pair.is_empty() {
+            None
+        } else {
+            Some(deps.api.addr_validate(&xprism_nexprism_pair)?)
+        }
     }
 
     save_config(deps.storage, &config)?;
@@ -239,6 +251,10 @@ fn claim_rewards_logic(
     let mut state: State = load_state(deps.storage)?;
     let config: Config = load_config(deps.storage)?;
 
+    state.staking_total_balance =
+        get_staking_total_balance(deps.as_ref(), config.owner.clone(), &state)?;
+    staker.balance = get_staker_balance(deps.as_ref(), config.owner, &staker, staker_addr)?;
+
     calculate_global_index(
         state.virtual_reward_balance,
         state.staking_total_balance,
@@ -291,30 +307,42 @@ fn claim_rewards_logic(
     staker.virtual_index = state.virtual_rewards.global_index;
     save_staker(deps.storage, staker_addr, &staker)?;
 
-    let mut resp = Response::new()
+    let resp = Response::new()
         .add_attribute("action", "claim_reward")
         .add_attribute("staker", staker_addr)
         .add_attribute("recipient", recipient)
         .add_attribute("rewards", rewards);
 
-    if !config.staker_reward_pair.is_empty() {
-        resp = resp.add_message(Asset::cw20(config.reward_token, rewards).send_msg(
-            config.staker_reward_pair[0].clone(),
-            to_binary(&astroport::pair::Cw20HookMsg::Swap {
-                belief_price: None,
-                max_spread: None,
-                to: Some(recipient.to_string()),
-            })?,
-        )?);
-    } else {
-        resp = resp.add_submessage(transfer(
-            config.reward_token.to_string(),
-            recipient.to_string(),
-            rewards,
-        )?);
-    }
-
-    Ok(resp)
+    Ok(
+        match (config.staker_reward_pair, config.xprism_nexprism_pair) {
+            (Some(staker_reward_pair), Some(_)) => resp.add_submessage(SubMsg::reply_on_success(
+                Asset::cw20(config.reward_token, rewards).send_msg(
+                    staker_reward_pair,
+                    to_binary(&astroport::pair::Cw20HookMsg::Swap {
+                        belief_price: None,
+                        max_spread: None,
+                        to: None,
+                    })?,
+                )?,
+                FIRST_SWAP_REPLY_ID,
+            )),
+            (Some(staker_reward_pair), None) => {
+                resp.add_message(Asset::cw20(config.reward_token, rewards).send_msg(
+                    staker_reward_pair,
+                    to_binary(&astroport::pair::Cw20HookMsg::Swap {
+                        belief_price: None,
+                        max_spread: None,
+                        to: Some(recipient.to_string()),
+                    })?,
+                )?)
+            }
+            (None, _) => resp.add_submessage(transfer(
+                config.reward_token.to_string(),
+                recipient.to_string(),
+                rewards,
+            )?),
+        },
+    )
 }
 
 pub fn increase_balance(
@@ -328,6 +356,10 @@ pub fn increase_balance(
 
     let mut state: State = load_state(deps.storage)?;
     let mut staker: Staker = load_staker(deps.storage, &address)?;
+
+    state.staking_total_balance =
+        get_staking_total_balance(deps.as_ref(), config.owner.clone(), &state)?;
+    staker.balance = get_staker_balance(deps.as_ref(), config.owner.clone(), &staker, &address)?;
 
     let real_rewards = calculate_decimal_rewards(
         state.real_rewards.global_index,
@@ -382,6 +414,10 @@ pub fn decrease_balance(
 
     let mut state: State = load_state(deps.storage)?;
     let mut staker: Staker = load_staker(deps.storage, &address)?;
+
+    state.staking_total_balance =
+        get_staking_total_balance(deps.as_ref(), config.owner.clone(), &state)?;
+    staker.balance = get_staker_balance(deps.as_ref(), config.owner.clone(), &staker, &address)?;
 
     if staker.balance < amount {
         return Err(ContractError::NotEnoughTokens {
@@ -444,4 +480,38 @@ pub fn reward(deps: DepsMut, amount: Uint128) -> ContractResult<Response> {
 
 fn get_time(block: &BlockInfo) -> u64 {
     block.time.seconds()
+}
+
+pub fn get_staking_total_balance(
+    deps: Deps,
+    owner: Option<Addr>,
+    state: &State,
+) -> ContractResult<Uint128> {
+    Ok(if let Some(owner) = owner {
+        let s: OwnerStateResponse = deps
+            .querier
+            .query_wasm_smart(owner, &OwnerQueryMsg::State {})?;
+        s.total_deposit
+    } else {
+        state.staking_total_balance
+    })
+}
+
+pub fn get_staker_balance(
+    deps: Deps,
+    owner: Option<Addr>,
+    staker: &Staker,
+    addr: &Addr,
+) -> ContractResult<Uint128> {
+    Ok(if let Some(owner) = owner {
+        let s: OwnerStakerResponse = deps.querier.query_wasm_smart(
+            owner,
+            &OwnerQueryMsg::Staker {
+                address: addr.to_string(),
+            },
+        )?;
+        s.balance
+    } else {
+        staker.balance
+    })
 }

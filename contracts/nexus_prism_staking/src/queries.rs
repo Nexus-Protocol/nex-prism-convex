@@ -1,5 +1,7 @@
 use crate::{
-    commands::calculate_global_index, math::decimal_summation_in_256, state::State,
+    commands::{calculate_global_index, get_staker_balance, get_staking_total_balance},
+    math::decimal_summation_in_256,
+    state::State,
     utils::calculate_decimal_rewards,
 };
 use cosmwasm_std::{Decimal, Deps, Env, StdResult, Uint128};
@@ -27,8 +29,11 @@ pub fn query_config(deps: Deps) -> StdResult<ConfigResponse> {
 }
 
 pub fn query_rewards(deps: Deps, address: String) -> StdResult<RewardsResponse> {
+    let config = load_config(deps.storage)?;
+
     let staker_addr = deps.api.addr_validate(&address)?;
-    let staker = load_staker(deps.storage, &staker_addr)?;
+    let mut staker = load_staker(deps.storage, &staker_addr)?;
+    staker.balance = get_staker_balance(deps, config.owner, &staker, &staker_addr)?;
 
     let real_global_index = load_state(deps.storage)?.real_rewards.global_index;
     let real_reward_with_decimals =
@@ -56,6 +61,9 @@ pub fn query_staker(deps: Deps, env: Env, address: String) -> StdResult<StakerRe
 
     let mut state: State = load_state(deps.storage)?;
     let config: Config = load_config(deps.storage)?;
+
+    state.staking_total_balance = get_staking_total_balance(deps, config.owner.clone(), &state)?;
+    staker.balance = get_staker_balance(deps, config.owner, &staker, &staker_addr)?;
 
     calculate_global_index(
         state.virtual_reward_balance,
