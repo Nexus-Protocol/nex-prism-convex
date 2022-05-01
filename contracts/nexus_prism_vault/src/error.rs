@@ -13,11 +13,14 @@ pub enum ContractError {
     #[error("unauthorized")]
     Unauthorized {},
 
-    #[error("invalid reward ratios")]
-    InvalidRewardRatios {},
+    #[error("invalid config")]
+    InvalidConfig {},
+
+    #[error("invalid state")]
+    InvalidState {},
 
     #[error("unknown reply id={id}")]
-    UnknownReply { id: u64 },
+    UnknownReplyId { id: u64 },
 }
 
 impl From<ContractError> for StdError {

@@ -22,8 +22,8 @@ integration_tests_build = []
 
 [dependencies]
 cosmwasm-bignumber = "2.2.0"
-cosmwasm-std = {version = "0.16.7", features = ["iterator"]}
-cosmwasm-storage = {version = "0.16.7", features = ["iterator"]}
+cosmwasm-std = "0.16.7"
+cosmwasm-storage = "0.16.7"
 cw20 = "0.9.1"
 cw20-base = {version = "0.9.1", features = ["library"]}
 schemars = "0.8.8"

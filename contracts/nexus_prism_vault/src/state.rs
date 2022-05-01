@@ -5,45 +5,85 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::ContractError;
 
+const CONFIG: Item<Config> = Item::new("config");
+pub const INST_CONFIG: Item<InstantiationConfig> = Item::new("inst_config");
+const STATE: Item<State> = Item::new("state");
+pub const REPLY_CONTEXT: Item<ReplyContext> = Item::new("reply");
+pub const GOVERNANCE_UPDATE: Item<GovernanceUpdateState> = Item::new("gov_update");
+
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct Config {
     pub owner: Addr,
     pub governance: Addr,
-    pub psi_token: Addr,
+
     pub xprism_token: Addr,
     pub nexprism_token: Addr,
     pub yluna_token: Addr,
     pub nyluna_token: Addr,
     pub prism_token: Addr,
+
     pub prism_launch_pool: Addr,
     pub prism_xprism_boost: Addr,
-    pub astroport_factory: Addr,
-    pub xprism_nexprism_amp_coef: u64,
-    pub cw20_token_code_id: u64,
-    pub autocompounder_code_id: u64,
-    pub autocompounder_admin: Addr,
-    pub staking_code_id: u64,
-    pub staking_admin: Addr,
-    pub nexprism_xprism_staking: Addr,
-    pub psi_nexprism_staking: Addr,
-    pub yluna_prism_staking: Addr,
-    pub xprism_nexprism_pair: Addr,
-    pub xprism_prism_pair: Addr,
-    pub yluna_prism_pair: Addr,
-    pub rewards_distribution_update_period: Option<u64>,
+
+    pub nexprism_staking: Addr,
+    pub psi_staking: Addr,
+    pub nyluna_staking: Addr,
+
+    pub nexprism_xprism_pair: Addr,
+    pub prism_xprism_pair: Addr,
+    pub prism_yluna_pair: Addr,
+
+    pub rewards_distribution_update_period_secs: Option<u64>,
     pub rewards_distribution_update_step: Decimal,
+
     pub min_nexprism_stakers_reward_ratio: Decimal,
     pub max_nexprism_stakers_reward_ratio: Decimal,
-    pub min_yluna_depositors_reward_ratio: Decimal,
-    pub max_yluna_depositors_reward_ratio: Decimal,
+    pub min_nyluna_stakers_reward_ratio: Decimal,
+    pub max_nyluna_stakers_reward_ratio: Decimal,
+}
+
+pub fn load_config(store: &dyn Storage) -> StdResult<Config> {
+    CONFIG.load(store)
+}
+
+pub fn save_config(store: &mut dyn Storage, config: &Config) -> Result<(), ContractError> {
+    if config.rewards_distribution_update_step.is_zero()
+        || config.min_nexprism_stakers_reward_ratio > Decimal::one()
+        || config.max_nexprism_stakers_reward_ratio > Decimal::one()
+        || config.min_nyluna_stakers_reward_ratio > Decimal::one()
+        || config.max_nyluna_stakers_reward_ratio > Decimal::one()
+        || config.min_nexprism_stakers_reward_ratio >= config.max_nexprism_stakers_reward_ratio
+        || config.min_nyluna_stakers_reward_ratio >= config.max_nyluna_stakers_reward_ratio
+    {
+        return Err(ContractError::InvalidConfig {});
+    }
+
+    CONFIG.save(store, config)?;
+
+    Ok(())
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct InstantiationConfig {
+    pub admin: Addr,
+    pub cw20_token_code_id: u64,
+    pub staking_code_id: u64,
+    pub autocompounder_code_id: u64,
+    pub astroport_factory: Addr,
+    pub nexprism_xprism_amp_coef: u64,
+    pub psi_token: Addr,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct State {
     pub nexprism_stakers_reward_ratio: Decimal,
-    pub yluna_depositors_reward_ratio: Decimal,
+    pub nyluna_stakers_reward_ratio: Decimal,
     pub psi_stakers_reward_ratio: Decimal,
     pub last_calculation_time: u64,
+}
+
+pub fn load_state(store: &dyn Storage) -> StdResult<State> {
+    STATE.load(store)
 }
 
 pub fn save_state(
@@ -52,62 +92,20 @@ pub fn save_state(
     state: &State,
 ) -> Result<(), ContractError> {
     if state.nexprism_stakers_reward_ratio
-        + state.yluna_depositors_reward_ratio
+        + state.nyluna_stakers_reward_ratio
         + state.psi_stakers_reward_ratio
         != Decimal::one()
         || state.nexprism_stakers_reward_ratio > config.max_nexprism_stakers_reward_ratio
         || state.nexprism_stakers_reward_ratio < config.min_nexprism_stakers_reward_ratio
-        || state.yluna_depositors_reward_ratio > config.max_yluna_depositors_reward_ratio
-        || state.yluna_depositors_reward_ratio < config.min_yluna_depositors_reward_ratio
+        || state.nyluna_stakers_reward_ratio > config.max_nyluna_stakers_reward_ratio
+        || state.nyluna_stakers_reward_ratio < config.min_nyluna_stakers_reward_ratio
     {
-        return Err(ContractError::InvalidRewardRatios {});
+        return Err(ContractError::InvalidState {});
     }
 
     STATE.save(store, state)?;
 
     Ok(())
-}
-
-pub fn set_nyluna(storage: &mut dyn Storage, addr: Addr) -> StdResult<Config> {
-    CONFIG.update(storage, |mut config: Config| -> StdResult<_> {
-        config.nyluna_token = addr;
-        Ok(config)
-    })
-}
-
-pub fn set_nexprism(storage: &mut dyn Storage, addr: Addr) -> StdResult<Config> {
-    CONFIG.update(storage, |mut config: Config| -> StdResult<_> {
-        config.nexprism_token = addr;
-        Ok(config)
-    })
-}
-
-pub fn set_nexprism_staking(storage: &mut dyn Storage, addr: Addr) -> StdResult<Config> {
-    CONFIG.update(storage, |mut config: Config| -> StdResult<_> {
-        config.nexprism_xprism_staking = addr;
-        Ok(config)
-    })
-}
-
-pub fn set_yluna_staking(storage: &mut dyn Storage, addr: Addr) -> StdResult<Config> {
-    CONFIG.update(storage, |mut config: Config| -> StdResult<_> {
-        config.yluna_prism_staking = addr;
-        Ok(config)
-    })
-}
-
-pub fn set_psi_staking(storage: &mut dyn Storage, addr: Addr) -> StdResult<Config> {
-    CONFIG.update(storage, |mut config: Config| -> StdResult<_> {
-        config.psi_nexprism_staking = addr;
-        Ok(config)
-    })
-}
-
-pub fn set_xprism_nexprism_pair(storage: &mut dyn Storage, addr: Addr) -> StdResult<Config> {
-    CONFIG.update(storage, |mut config: Config| -> StdResult<_> {
-        config.xprism_nexprism_pair = addr;
-        Ok(config)
-    })
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -120,11 +118,3 @@ pub struct GovernanceUpdateState {
 pub struct ReplyContext {
     pub reward_balance: Uint128,
 }
-
-pub const CONFIG: Item<Config> = Item::new("config");
-
-pub const STATE: Item<State> = Item::new("state");
-
-pub const REPLY_CONTEXT: Item<ReplyContext> = Item::new("reply");
-
-pub const GOVERNANCE_UPDATE: Item<GovernanceUpdateState> = Item::new("gov_update");

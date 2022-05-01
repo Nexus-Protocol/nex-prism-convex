@@ -1,14 +1,42 @@
 use cosmwasm_bignumber::Decimal256;
 use cosmwasm_storage::to_length_prefixed;
-use cw20::Cw20ExecuteMsg;
+use cw20::{Cw20ExecuteMsg, MinterResponse};
 use cw20_base::state::TokenInfo;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use cosmwasm_std::{
-    to_binary, Addr, Binary, BlockInfo, Decimal, Deps, Order, QueryRequest, StdError, StdResult,
-    SubMsg, Uint128, WasmMsg, WasmQuery,
+    to_binary, Addr, Binary, BlockInfo, CosmosMsg, Decimal, Deps, Order, QueryRequest, StdError,
+    StdResult, SubMsg, Uint128, WasmMsg, WasmQuery,
 };
+
+#[macro_export]
+macro_rules! cfg_var {
+    ($c:ident, $v:ident) => {
+        if let Some($v) = $v {
+            $c.$v = $v;
+        }
+    };
+
+    ($c:ident, $v:ident, $($vs:ident),+) => {
+        cfg_var!($c, $v);
+        cfg_var!($c, $($vs),+);
+    };
+}
+
+#[macro_export]
+macro_rules! cfg_addr {
+    ($d:ident, $c:ident, $v:ident) => {
+        if let Some($v) = $v {
+            $c.$v = $d.api.addr_validate(&$v)?;
+        }
+    };
+
+    ($d:ident, $c:ident, $v:ident, $($vs:ident),+) => {
+        cfg_addr!($d, $c, $v);
+        cfg_addr!($d, $c, $($vs),+);
+    };
+}
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -104,19 +132,51 @@ fn query_token_supply_legacy(deps: Deps, contract_addr: &Addr) -> StdResult<Uint
     Ok(token_info.total_supply)
 }
 
-pub fn mint(token: String, recipient: String, amount: Uint128) -> StdResult<SubMsg> {
+pub fn mint(token: &Addr, recipient: &Addr, amount: Uint128) -> StdResult<SubMsg> {
     Ok(SubMsg::new(WasmMsg::Execute {
-        contract_addr: token,
-        msg: to_binary(&Cw20ExecuteMsg::Mint { recipient, amount })?,
+        contract_addr: token.to_string(),
+        msg: to_binary(&Cw20ExecuteMsg::Mint {
+            recipient: recipient.to_string(),
+            amount,
+        })?,
         funds: vec![],
     }))
 }
 
-pub fn transfer(token: String, recipient: String, amount: Uint128) -> StdResult<SubMsg> {
+pub fn transfer(token: &Addr, recipient: &Addr, amount: Uint128) -> StdResult<SubMsg> {
     Ok(SubMsg::new(WasmMsg::Execute {
-        contract_addr: token,
-        msg: to_binary(&Cw20ExecuteMsg::Transfer { recipient, amount })?,
+        contract_addr: token.to_string(),
+        msg: to_binary(&Cw20ExecuteMsg::Transfer {
+            recipient: recipient.to_string(),
+            amount,
+        })?,
         funds: vec![],
+    }))
+}
+
+pub fn instantiate_token(
+    admin: &Addr,
+    code_id: u64,
+    name: impl Into<String>,
+    symbol: impl Into<String>,
+    minter: &Addr,
+) -> StdResult<CosmosMsg> {
+    Ok(CosmosMsg::Wasm(WasmMsg::Instantiate {
+        admin: Some(admin.to_string()),
+        code_id,
+        msg: to_binary(&cw20_base::msg::InstantiateMsg {
+            name: name.into(),
+            symbol: symbol.into(),
+            decimals: 6,
+            initial_balances: vec![],
+            mint: Some(MinterResponse {
+                minter: minter.to_string(),
+                cap: None,
+            }),
+            marketing: None,
+        })?,
+        funds: vec![],
+        label: "".to_string(),
     }))
 }
 
