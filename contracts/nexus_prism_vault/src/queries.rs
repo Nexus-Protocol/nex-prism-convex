@@ -1,7 +1,12 @@
-use cosmwasm_std::{Deps, StdResult};
-use nexus_prism_protocol::vault::ConfigResponse;
+use cosmwasm_std::{Deps, Env, StdResult};
+use nexus_prism_protocol::vault::{
+    ConfigResponse, StateResponse, UpdateRewardsDistributionResponse,
+};
 
-use crate::state::load_config;
+use crate::{
+    commands::update_rewards_distribution,
+    state::{load_config, load_state},
+};
 
 pub fn query_config(deps: Deps) -> StdResult<ConfigResponse> {
     let config = load_config(deps.storage)?;
@@ -34,5 +39,31 @@ pub fn query_config(deps: Deps) -> StdResult<ConfigResponse> {
         max_nexprism_stakers_reward_ratio: config.max_nexprism_stakers_reward_ratio,
         min_nyluna_stakers_reward_ratio: config.min_nyluna_stakers_reward_ratio,
         max_nyluna_stakers_reward_ratio: config.max_nyluna_stakers_reward_ratio,
+    })
+}
+
+pub fn query_state(deps: Deps) -> StdResult<StateResponse> {
+    let state = load_state(deps.storage)?;
+
+    Ok(StateResponse {
+        nexprism_stakers_reward_ratio: state.nexprism_stakers_reward_ratio,
+        nyluna_stakers_reward_ratio: state.nyluna_stakers_reward_ratio,
+        psi_stakers_reward_ratio: state.psi_stakers_reward_ratio,
+        last_calculation_time: state.last_calculation_time,
+    })
+}
+
+pub fn simulate_update_rewards_distribution(
+    deps: Deps,
+    env: Env,
+) -> StdResult<UpdateRewardsDistributionResponse> {
+    let config = load_config(deps.storage)?;
+    let state = load_state(deps.storage)?;
+    let new_state = update_rewards_distribution(deps, env, &config, &state)?;
+
+    Ok(UpdateRewardsDistributionResponse {
+        nexprism_stakers_reward_ratio: new_state.nexprism_stakers_reward_ratio,
+        nyluna_stakers_reward_ratio: new_state.nyluna_stakers_reward_ratio,
+        psi_stakers_reward_ratio: new_state.psi_stakers_reward_ratio,
     })
 }

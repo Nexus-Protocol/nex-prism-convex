@@ -1,9 +1,9 @@
 use crate::commands::{
     accept_governance, claim_real_rewards, claim_virtual_rewards, deposit_xprism, deposit_yluna,
-    update_config_by_governance, update_config_by_owner, update_governance, update_state,
-    withdraw_yluna,
+    update_config_by_governance, update_config_by_owner, update_governance,
+    update_rewards_distribution_by_owner, update_state, withdraw_yluna,
 };
-use crate::queries::query_config;
+use crate::queries::{query_config, query_state, simulate_update_rewards_distribution};
 use crate::replies_id::ReplyId;
 #[cfg(not(feature = "library"))]
 use cosmwasm_std::entry_point;
@@ -133,6 +133,9 @@ pub fn execute(
                 return Err(ContractError::Unauthorized {});
             }
             match msg {
+                OwnerMsg::UpdateRewardsDistribution {} => {
+                    update_rewards_distribution_by_owner(deps, env, config)
+                }
                 OwnerMsg::UpdateState {
                     nexprism_stakers_reward_ratio,
                     nyluna_stakers_reward_ratio,
@@ -252,9 +255,13 @@ fn receive_cw20(
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
-pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
+pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
     match msg {
         QueryMsg::Config {} => to_binary(&query_config(deps)?),
+        QueryMsg::State {} => to_binary(&query_state(deps)?),
+        QueryMsg::SimulateUpdateRewardsDistribution {} => {
+            to_binary(&simulate_update_rewards_distribution(deps, env)?)
+        }
     }
 }
 

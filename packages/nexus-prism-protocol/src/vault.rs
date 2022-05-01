@@ -62,6 +62,7 @@ pub enum Cw20HookMsg {
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum OwnerMsg {
+    UpdateRewardsDistribution {},
     UpdateState {
         nexprism_stakers_reward_ratio: Decimal,
         nyluna_stakers_reward_ratio: Decimal,
@@ -119,6 +120,8 @@ pub enum GovernanceMsg {
 #[serde(rename_all = "snake_case")]
 pub enum QueryMsg {
     Config {},
+    State {},
+    SimulateUpdateRewardsDistribution {},
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
@@ -150,6 +153,21 @@ pub struct ConfigResponse {
     pub max_nexprism_stakers_reward_ratio: Decimal,
     pub min_nyluna_stakers_reward_ratio: Decimal,
     pub max_nyluna_stakers_reward_ratio: Decimal,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+pub struct StateResponse {
+    pub nexprism_stakers_reward_ratio: Decimal,
+    pub nyluna_stakers_reward_ratio: Decimal,
+    pub psi_stakers_reward_ratio: Decimal,
+    pub last_calculation_time: u64,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+pub struct UpdateRewardsDistributionResponse {
+    pub nexprism_stakers_reward_ratio: Decimal,
+    pub nyluna_stakers_reward_ratio: Decimal,
+    pub psi_stakers_reward_ratio: Decimal,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]

@@ -18,7 +18,7 @@ use crate::{
     replies_id::ReplyId,
     state::{
         load_config, load_state, save_config, save_state, Config, GovernanceUpdateState,
-        ReplyContext, GOVERNANCE_UPDATE, REPLY_CONTEXT,
+        ReplyContext, State, GOVERNANCE_UPDATE, REPLY_CONTEXT,
     },
 };
 
@@ -136,7 +136,7 @@ pub fn deposit_xprism(
     sender: String,
     amount: Uint128,
 ) -> Result<Response, ContractError> {
-    update_rewards_distribution(deps, env, &config)?;
+    update_rewards_distribution_by_anyone(deps, env, &config)?;
 
     Ok(Response::new()
         .add_submessage(mint(
@@ -177,7 +177,7 @@ pub fn deposit_yluna(
     sender: String,
     amount: Uint128,
 ) -> Result<Response, ContractError> {
-    update_rewards_distribution(deps, env, &config)?;
+    update_rewards_distribution_by_anyone(deps, env, &config)?;
 
     Ok(Response::new()
         .add_submessage(mint(
@@ -218,7 +218,7 @@ pub fn withdraw_yluna(
     sender: String,
     amount: Uint128,
 ) -> Result<Response, ContractError> {
-    update_rewards_distribution(deps, env, &config)?;
+    update_rewards_distribution_by_anyone(deps, env, &config)?;
 
     Ok(Response::new()
         .add_submessage(withdraw_from_launch_pool(
@@ -317,7 +317,33 @@ fn claim_withdrawn_rewards(xprism_boost: &Addr) -> StdResult<SubMsg> {
     ))
 }
 
-fn update_rewards_distribution(
+pub fn update_rewards_distribution_by_owner(
+    deps: DepsMut,
+    env: Env,
+    config: Config,
+) -> Result<Response, ContractError> {
+    let mut state = load_state(deps.storage)?;
+    state.last_calculation_time = get_time(&env.block);
+    let new_state = update_rewards_distribution(deps.as_ref(), env, &config, &state)?;
+    save_state(deps.storage, &config, &new_state)?;
+
+    Ok(Response::new()
+        .add_attribute("action", "update_rewards_distribution")
+        .add_attribute(
+            "nexprism_stakers_reward_ratio",
+            new_state.nexprism_stakers_reward_ratio.to_string(),
+        )
+        .add_attribute(
+            "nyluna_stakers_reward_ratio",
+            new_state.nyluna_stakers_reward_ratio.to_string(),
+        )
+        .add_attribute(
+            "psi_stakers_reward_ratio",
+            new_state.psi_stakers_reward_ratio.to_string(),
+        ))
+}
+
+fn update_rewards_distribution_by_anyone(
     deps: DepsMut,
     env: Env,
     config: &Config,
@@ -333,66 +359,79 @@ fn update_rewards_distribution(
         state.last_calculation_time = cur_time;
         save_state(deps.storage, config, &state)?;
 
-        let xprism_price = get_price(
-            deps.as_ref(),
-            &config.prism_xprism_pair,
-            &config.xprism_token,
-            &config.prism_token,
-        )?;
-        let yluna_price = get_price(
-            deps.as_ref(),
-            &config.prism_yluna_pair,
-            &config.yluna_token,
-            &config.prism_token,
-        )?;
-
-        let value = calculate(
-            deps.as_ref(),
-            env,
-            &config.prism_launch_pool,
-            &config.prism_xprism_boost,
-            yluna_price,
-            xprism_price,
-        )?;
-        match value {
-            Value::Negative => {
-                state.nexprism_stakers_reward_ratio = mul(
-                    state.nexprism_stakers_reward_ratio,
-                    config.rewards_distribution_update_step,
-                );
-                if state.nexprism_stakers_reward_ratio > config.max_nexprism_stakers_reward_ratio {
-                    return Ok(());
-                }
-                state.nyluna_stakers_reward_ratio = Decimal::one()
-                    - state.nexprism_stakers_reward_ratio
-                    - state.psi_stakers_reward_ratio;
-                if state.nyluna_stakers_reward_ratio < config.min_nyluna_stakers_reward_ratio {
-                    return Ok(());
-                }
-            }
-            Value::Positive => {
-                state.nexprism_stakers_reward_ratio = div(
-                    state.nexprism_stakers_reward_ratio,
-                    config.rewards_distribution_update_step,
-                );
-                if state.nexprism_stakers_reward_ratio < config.min_nexprism_stakers_reward_ratio {
-                    return Ok(());
-                }
-                state.nyluna_stakers_reward_ratio = Decimal::one()
-                    - state.nexprism_stakers_reward_ratio
-                    - state.psi_stakers_reward_ratio;
-                if state.nyluna_stakers_reward_ratio > config.max_nyluna_stakers_reward_ratio {
-                    return Ok(());
-                }
-            }
-            Value::Zero => {
-                return Ok(());
-            }
-        };
-        save_state(deps.storage, config, &state)?;
+        let new_state = update_rewards_distribution(deps.as_ref(), env, config, &state)?;
+        save_state(deps.storage, config, &new_state)?;
     }
 
     Ok(())
+}
+
+pub fn update_rewards_distribution(
+    deps: Deps,
+    env: Env,
+    config: &Config,
+    state: &State,
+) -> StdResult<State> {
+    let xprism_price = get_price(
+        deps,
+        &config.prism_xprism_pair,
+        &config.xprism_token,
+        &config.prism_token,
+    )?;
+    let yluna_price = get_price(
+        deps,
+        &config.prism_yluna_pair,
+        &config.yluna_token,
+        &config.prism_token,
+    )?;
+
+    let value = calculate(
+        deps,
+        env,
+        &config.prism_launch_pool,
+        &config.prism_xprism_boost,
+        yluna_price,
+        xprism_price,
+    )?;
+
+    let mut new_state = state.clone();
+    match value {
+        Value::Negative => {
+            new_state.nexprism_stakers_reward_ratio = mul(
+                new_state.nexprism_stakers_reward_ratio,
+                config.rewards_distribution_update_step,
+            );
+            if new_state.nexprism_stakers_reward_ratio > config.max_nexprism_stakers_reward_ratio {
+                return Ok(state.clone());
+            }
+            new_state.nyluna_stakers_reward_ratio = Decimal::one()
+                - new_state.nexprism_stakers_reward_ratio
+                - new_state.psi_stakers_reward_ratio;
+            if new_state.nyluna_stakers_reward_ratio < config.min_nyluna_stakers_reward_ratio {
+                return Ok(state.clone());
+            }
+        }
+        Value::Positive => {
+            new_state.nexprism_stakers_reward_ratio = div(
+                new_state.nexprism_stakers_reward_ratio,
+                config.rewards_distribution_update_step,
+            );
+            if new_state.nexprism_stakers_reward_ratio < config.min_nexprism_stakers_reward_ratio {
+                return Ok(state.clone());
+            }
+            new_state.nyluna_stakers_reward_ratio = Decimal::one()
+                - new_state.nexprism_stakers_reward_ratio
+                - new_state.psi_stakers_reward_ratio;
+            if new_state.nyluna_stakers_reward_ratio > config.max_nyluna_stakers_reward_ratio {
+                return Ok(state.clone());
+            }
+        }
+        Value::Zero => {
+            return Ok(state.clone());
+        }
+    }
+
+    Ok(new_state)
 }
 
 enum Value {

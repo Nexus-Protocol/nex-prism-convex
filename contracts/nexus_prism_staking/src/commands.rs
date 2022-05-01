@@ -336,11 +336,7 @@ fn claim_rewards_logic(
                     })?,
                 )?)
             }
-            (None, _) => resp.add_submessage(transfer(
-                config.reward_token.to_string(),
-                recipient.to_string(),
-                rewards,
-            )?),
+            (None, _) => resp.add_submessage(transfer(&config.reward_token, recipient, rewards)?),
         },
     )
 }
