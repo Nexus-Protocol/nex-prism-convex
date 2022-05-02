@@ -52,8 +52,8 @@ pub fn save_config(store: &mut dyn Storage, config: &Config) -> Result<(), Contr
         || config.max_nexprism_stakers_reward_ratio > Decimal::one()
         || config.min_nyluna_stakers_reward_ratio > Decimal::one()
         || config.max_nyluna_stakers_reward_ratio > Decimal::one()
-        // || config.min_nexprism_stakers_reward_ratio >= config.max_nexprism_stakers_reward_ratio
-        // || config.min_nyluna_stakers_reward_ratio >= config.max_nyluna_stakers_reward_ratio
+        || config.min_nexprism_stakers_reward_ratio >= config.max_nexprism_stakers_reward_ratio
+        || config.min_nyluna_stakers_reward_ratio >= config.max_nyluna_stakers_reward_ratio
     {
         return Err(ContractError::InvalidConfig {});
     }
@@ -91,17 +91,17 @@ pub fn save_state(
     config: &Config,
     state: &State,
 ) -> Result<(), ContractError> {
-    // if state.nexprism_stakers_reward_ratio
-    //     + state.nyluna_stakers_reward_ratio
-    //     + state.psi_stakers_reward_ratio
-    //     != Decimal::one()
-    //     || state.nexprism_stakers_reward_ratio > config.max_nexprism_stakers_reward_ratio
-    //     || state.nexprism_stakers_reward_ratio < config.min_nexprism_stakers_reward_ratio
-    //     || state.nyluna_stakers_reward_ratio > config.max_nyluna_stakers_reward_ratio
-    //     || state.nyluna_stakers_reward_ratio < config.min_nyluna_stakers_reward_ratio
-    // {
-    //     return Err(ContractError::InvalidState {});
-    // }
+    if state.nexprism_stakers_reward_ratio
+        + state.nyluna_stakers_reward_ratio
+        + state.psi_stakers_reward_ratio
+        != Decimal::one()
+        || state.nexprism_stakers_reward_ratio > config.max_nexprism_stakers_reward_ratio
+        || state.nexprism_stakers_reward_ratio < config.min_nexprism_stakers_reward_ratio
+        || state.nyluna_stakers_reward_ratio > config.max_nyluna_stakers_reward_ratio
+        || state.nyluna_stakers_reward_ratio < config.min_nyluna_stakers_reward_ratio
+    {
+        return Err(ContractError::InvalidState {});
+    }
 
     STATE.save(store, state)?;
 

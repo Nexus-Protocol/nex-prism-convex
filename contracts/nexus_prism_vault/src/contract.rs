@@ -71,10 +71,10 @@ pub fn instantiate(
         rewards_distribution_update_period_secs: msg.rewards_distribution_update_period_secs,
         rewards_distribution_update_step: msg.rewards_distribution_update_step,
 
-        min_nexprism_stakers_reward_ratio: msg.nexprism_stakers_reward_ratio,
-        max_nexprism_stakers_reward_ratio: msg.nexprism_stakers_reward_ratio,
-        min_nyluna_stakers_reward_ratio: msg.nyluna_stakers_reward_ratio,
-        max_nyluna_stakers_reward_ratio: msg.nyluna_stakers_reward_ratio,
+        min_nexprism_stakers_reward_ratio: msg.min_nexprism_stakers_reward_ratio,
+        max_nexprism_stakers_reward_ratio: msg.max_nexprism_stakers_reward_ratio,
+        min_nyluna_stakers_reward_ratio: msg.min_nyluna_stakers_reward_ratio,
+        max_nyluna_stakers_reward_ratio: msg.max_nyluna_stakers_reward_ratio,
     };
     save_config(deps.storage, &config)?;
 
