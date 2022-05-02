@@ -52,8 +52,8 @@ pub fn save_config(store: &mut dyn Storage, config: &Config) -> Result<(), Contr
         || config.max_nexprism_stakers_reward_ratio > Decimal::one()
         || config.min_nyluna_stakers_reward_ratio > Decimal::one()
         || config.max_nyluna_stakers_reward_ratio > Decimal::one()
-        || config.min_nexprism_stakers_reward_ratio >= config.max_nexprism_stakers_reward_ratio
-        || config.min_nyluna_stakers_reward_ratio >= config.max_nyluna_stakers_reward_ratio
+        // || config.min_nexprism_stakers_reward_ratio >= config.max_nexprism_stakers_reward_ratio
+        // || config.min_nyluna_stakers_reward_ratio >= config.max_nyluna_stakers_reward_ratio
     {
         return Err(ContractError::InvalidConfig {});
     }
