@@ -5,14 +5,14 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct InstantiateMsg {
-    pub owner: Option<String>,
-    pub staking_token: String,
-    pub rewarder: String,
-    pub reward_token: String,
-    pub staker_reward_pair: Option<String>,
-    pub xprism_token: Option<String>,
-    pub xprism_nexprism_pair: Option<String>,
     pub governance: String,
+    pub staking_token: String,
+    pub stake_operator: Option<String>,
+    pub reward_token: String,
+    pub reward_operator: String,
+    pub xprism_token: Option<String>,
+    pub prism_governance: Option<String>,
+    pub nexprism_xprism_pair: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
@@ -20,8 +20,8 @@ pub struct InstantiateMsg {
 pub enum ExecuteMsg {
     Receive(Cw20ReceiveMsg),
     Anyone { anyone_msg: AnyoneMsg },
-    Owner { msg: OwnerMsg },
-    Rewarder { msg: RewarderMsg },
+    StakeOperator { msg: StakeOperatorMsg },
+    RewardOperator { msg: RewardOperatorMsg },
     Governance { governance_msg: GovernanceMsg },
 }
 
@@ -44,7 +44,7 @@ pub enum AnyoneMsg {
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
-pub enum RewarderMsg {
+pub enum RewardOperatorMsg {
     Reward { amount: Uint128 },
 }
 
@@ -52,35 +52,21 @@ pub enum RewarderMsg {
 #[serde(rename_all = "snake_case")]
 pub enum GovernanceMsg {
     UpdateConfig {
-        owner: Option<String>,
-        staking_token: Option<String>,
-        rewarder: Option<String>,
-        reward_token: Option<String>,
-        staker_reward_pair: Option<String>,
-        xprism_nexprism_pair: Option<String>,
+        stake_operator: Option<String>,
+        reward_operator: Option<String>,
+        nexprism_xprism_pair: Option<String>,
     },
-    UpdateGovernanceContract {
+    UpdateGovernance {
         gov_addr: String,
-        //how long to wait for 'AcceptGovernance' transaction
         seconds_to_wait_for_accept_gov_tx: u64,
     },
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
-pub enum OwnerMsg {
-    IncreaseBalance {
-        address: String,
-        amount: Uint128,
-        // current: Uint128,
-        // total: Uint128,
-    },
-    DecreaseBalance {
-        address: String,
-        amount: Uint128,
-        // current: Uint128,
-        // total: Uint128,
-    },
+pub enum StakeOperatorMsg {
+    IncreaseBalance { staker: String, amount: Uint128 },
+    DecreaseBalance { staker: String, amount: Uint128 },
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
@@ -93,12 +79,14 @@ pub enum QueryMsg {
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct ConfigResponse {
-    pub owner: Option<String>,
-    pub staking_token: String,
-    pub rewarder: String,
-    pub reward_token: String,
-    pub staker_reward_pair: String,
     pub governance: String,
+    pub staking_token: String,
+    pub stake_operator: Option<String>,
+    pub reward_token: String,
+    pub reward_operator: String,
+    pub xprism_token: Option<String>,
+    pub prism_governance: Option<String>,
+    pub nexprism_xprism_pair: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
@@ -122,17 +110,17 @@ pub struct MigrateMsg {}
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
-pub enum OwnerQueryMsg {
+pub enum StakeOperatorQueryMsg {
     State {},
     Staker { address: String },
 }
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema)]
-pub struct OwnerStateResponse {
+pub struct StakeOperatorStateResponse {
     pub total_deposit: Uint128,
 }
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema)]
-pub struct OwnerStakerResponse {
+pub struct StakeOperatorStakerResponse {
     pub balance: Uint128,
 }

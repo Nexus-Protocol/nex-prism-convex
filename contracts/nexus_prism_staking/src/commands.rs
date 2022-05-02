@@ -1,30 +1,30 @@
 use std::cmp::min;
 
 use cosmwasm_std::{
-    from_binary, to_binary, Addr, BlockInfo, Decimal, Deps, DepsMut, Env, MessageInfo, Response,
-    StdError, SubMsg, Uint128, WasmMsg,
+    from_binary, Addr, BlockInfo, Decimal, Deps, DepsMut, Env, MessageInfo, Response, StdError,
+    StdResult, SubMsg, Uint128,
 };
-use cw_asset::Asset;
 use nexus_prism_protocol::{
-    common::{query_token_balance, transfer},
-    staking::{Cw20HookMsg, OwnerQueryMsg, OwnerStakerResponse, OwnerStateResponse},
+    common::{query_token_balance, send, send_wasm_msg, sum, transfer},
+    staking::{
+        Cw20HookMsg, StakeOperatorQueryMsg, StakeOperatorStakerResponse, StakeOperatorStateResponse,
+    },
 };
 
 use crate::{
-    contract::FIRST_SWAP_REPLY_ID,
     error::ContractError,
-    math::decimal_summation_in_256,
+    replies_id::ReplyId,
     state::{
         load_config, load_gov_update, load_staker, load_state, remove_gov_update, save_config,
-        save_gov_update, save_state, Config, GovernanceUpdateState, RewardState, Staker, State,
+        save_gov_update, save_state, Config, GovernanceUpdateState, ReplyContext, RewardState,
+        Staker, State, REPLY_CONTEXT,
     },
-    ContractResult,
 };
 use crate::{
     state::save_staker,
     utils::{calculate_decimal_rewards, get_decimals},
 };
-use cw20::{Cw20ExecuteMsg, Cw20ReceiveMsg};
+use cw20::Cw20ReceiveMsg;
 
 pub fn receive_cw20(
     deps: DepsMut,
@@ -34,7 +34,7 @@ pub fn receive_cw20(
 ) -> Result<Response, ContractError> {
     let config = load_config(deps.storage)?;
 
-    if config.owner.is_some() || info.sender != config.staking_token {
+    if config.stake_operator.is_some() || info.sender != config.staking_token {
         return Err(ContractError::Unauthorized);
     }
 
@@ -54,69 +54,33 @@ pub fn unbond(
 ) -> Result<Response, ContractError> {
     let config = load_config(deps.storage)?;
 
-    if config.owner.is_some() {
+    if config.stake_operator.is_some() {
         return Err(ContractError::Unauthorized);
     }
 
     Ok(
-        decrease_balance(deps, env, &config, info.sender.to_string(), amount)?.add_message(
-            WasmMsg::Execute {
-                contract_addr: config.staking_token.to_string(),
-                funds: vec![],
-                msg: to_binary(&Cw20ExecuteMsg::Transfer {
-                    recipient: info.sender.to_string(),
-                    amount,
-                })?,
-            },
-        ),
+        decrease_balance(deps, env, &config, info.sender.to_string(), amount)?
+            .add_submessage(transfer(&config.staking_token, &info.sender, amount)?),
     )
 }
 
-#[allow(clippy::too_many_arguments)]
 pub fn update_config(
     deps: DepsMut,
     mut config: Config,
-    owner: Option<String>,
-    staking_token: Option<String>,
-    rewarder: Option<String>,
-    reward_token: Option<String>,
-    staker_reward_pair: Option<String>,
-    xprism_nexprism_pair: Option<String>,
-) -> ContractResult<Response> {
-    if let Some(owner) = owner {
-        config.owner = if owner.is_empty() {
-            None
-        } else {
-            Some(deps.api.addr_validate(&owner)?)
-        };
+    stake_operator: Option<String>,
+    reward_operator: Option<String>,
+    nexprism_xprism_pair: Option<String>,
+) -> Result<Response, ContractError> {
+    if let Some(stake_operator) = stake_operator {
+        config.stake_operator = Some(deps.api.addr_validate(&stake_operator)?);
     }
 
-    if let Some(staking_token) = staking_token {
-        config.staking_token = deps.api.addr_validate(&staking_token)?;
+    if let Some(reward_operator) = reward_operator {
+        config.reward_operator = deps.api.addr_validate(&reward_operator)?;
     }
 
-    if let Some(rewarder) = rewarder {
-        config.rewarder = deps.api.addr_validate(&rewarder)?;
-    }
-
-    if let Some(reward_token) = reward_token {
-        config.reward_token = deps.api.addr_validate(&reward_token)?;
-    }
-
-    if let Some(staker_reward_pair) = staker_reward_pair {
-        config.staker_reward_pair = if staker_reward_pair.is_empty() {
-            None
-        } else {
-            Some(deps.api.addr_validate(&staker_reward_pair)?)
-        }
-    }
-
-    if let Some(xprism_nexprism_pair) = xprism_nexprism_pair {
-        config.xprism_nexprism_pair = if xprism_nexprism_pair.is_empty() {
-            None
-        } else {
-            Some(deps.api.addr_validate(&xprism_nexprism_pair)?)
-        }
+    if let Some(nexprism_xprism_pair) = nexprism_xprism_pair {
+        config.nexprism_xprism_pair = Some(deps.api.addr_validate(&nexprism_xprism_pair)?);
     }
 
     save_config(deps.storage, &config)?;
@@ -124,8 +88,8 @@ pub fn update_config(
     Ok(Response::new().add_attribute("action", "update_config"))
 }
 
-pub fn update_global_index(deps: DepsMut, env: Env) -> ContractResult<Response> {
-    let mut state: State = load_state(deps.storage)?;
+pub fn update_global_index(deps: DepsMut, env: Env) -> Result<Response, ContractError> {
+    let mut state = load_state(deps.storage)?;
 
     if state.staking_total_balance.is_zero() {
         return Err(ContractError::NoStakers {});
@@ -156,12 +120,12 @@ pub fn update_global_index(deps: DepsMut, env: Env) -> ContractResult<Response> 
         .add_attribute("virtual_claimed_rewards", virtual_claimed_rewards))
 }
 
-pub fn update_governance_addr(
+pub fn update_governance(
     deps: DepsMut,
     env: Env,
     gov_addr: String,
     seconds_to_wait_for_accept_gov_tx: u64,
-) -> ContractResult<Response> {
+) -> Result<Response, ContractError> {
     let current_time = get_time(&env.block);
     let gov_update = GovernanceUpdateState {
         new_governance_contract_addr: deps.api.addr_validate(&gov_addr)?,
@@ -171,7 +135,11 @@ pub fn update_governance_addr(
     Ok(Response::new().add_attribute("action", "update_governance_addr"))
 }
 
-pub fn accept_governance(deps: DepsMut, env: Env, info: MessageInfo) -> ContractResult<Response> {
+pub fn accept_governance(
+    deps: DepsMut,
+    env: Env,
+    info: MessageInfo,
+) -> Result<Response, ContractError> {
     let gov_update = load_gov_update(deps.storage)?;
     let current_time = get_time(&env.block);
 
@@ -199,8 +167,8 @@ pub fn calculate_global_index(
     reward_token_balance: Uint128,
     staking_token_balance_total: Uint128,
     reward_state: &mut RewardState,
-) -> ContractResult<Uint128> {
-    let claimed_rewards = reward_token_balance.checked_sub(reward_state.prev_balance)?;
+) -> Result<Uint128, ContractError> {
+    let claimed_rewards = reward_token_balance - reward_state.prev_balance;
 
     if staking_token_balance_total.is_zero() {
         return Ok(claimed_rewards);
@@ -208,7 +176,7 @@ pub fn calculate_global_index(
 
     reward_state.prev_balance = reward_token_balance;
 
-    reward_state.global_index = decimal_summation_in_256(
+    reward_state.global_index = sum(
         reward_state.global_index,
         Decimal::from_ratio(claimed_rewards, staking_token_balance_total),
     );
@@ -221,7 +189,7 @@ pub fn claim_rewards(
     env: Env,
     info: MessageInfo,
     recipient: Option<String>,
-) -> ContractResult<Response> {
+) -> Result<Response, ContractError> {
     let staker = &info.sender;
     match recipient {
         Some(recipient) => {
@@ -236,7 +204,7 @@ pub fn claim_rewards_for_someone(
     deps: DepsMut,
     env: Env,
     recipient: String,
-) -> ContractResult<Response> {
+) -> Result<Response, ContractError> {
     let addr = deps.api.addr_validate(&recipient)?;
     claim_rewards_logic(deps, env, &addr, &addr)
 }
@@ -246,14 +214,15 @@ fn claim_rewards_logic(
     env: Env,
     staker_addr: &Addr,
     recipient: &Addr,
-) -> ContractResult<Response> {
+) -> Result<Response, ContractError> {
     let mut staker: Staker = load_staker(deps.storage, staker_addr)?;
     let mut state: State = load_state(deps.storage)?;
     let config: Config = load_config(deps.storage)?;
 
     state.staking_total_balance =
-        get_staking_total_balance(deps.as_ref(), config.owner.clone(), &state)?;
-    staker.balance = get_staker_balance(deps.as_ref(), config.owner, &staker, staker_addr)?;
+        get_staking_total_balance(deps.as_ref(), config.stake_operator.clone(), &state)?;
+    staker.balance =
+        get_staker_balance(deps.as_ref(), config.stake_operator, &staker, staker_addr)?;
 
     calculate_global_index(
         state.virtual_reward_balance,
@@ -278,12 +247,12 @@ fn claim_rewards_logic(
     )?;
 
     let all_real_reward_with_decimals: Decimal =
-        decimal_summation_in_256(real_reward_with_decimals, staker.real_pending_rewards);
+        sum(real_reward_with_decimals, staker.real_pending_rewards);
     let real_decimals: Decimal = get_decimals(all_real_reward_with_decimals)?;
     let real_rewards: Uint128 = all_real_reward_with_decimals * Uint128::new(1);
 
     let all_virtual_reward_with_decimals: Decimal =
-        decimal_summation_in_256(virtual_reward_with_decimals, staker.virtual_pending_rewards);
+        sum(virtual_reward_with_decimals, staker.virtual_pending_rewards);
     let virtual_decimals: Decimal = get_decimals(all_virtual_reward_with_decimals)?;
     let virtual_rewards: Uint128 = all_virtual_reward_with_decimals * Uint128::new(1);
 
@@ -292,9 +261,9 @@ fn claim_rewards_logic(
         return Err(ContractError::NoRewards {});
     }
 
-    let new_real_balance = state.real_rewards.prev_balance.checked_sub(rewards)?;
+    let new_real_balance = state.real_rewards.prev_balance - rewards;
     state.real_rewards.prev_balance = new_real_balance;
-    let new_virtual_balance = state.virtual_rewards.prev_balance.checked_sub(rewards)?;
+    let new_virtual_balance = state.virtual_rewards.prev_balance - rewards;
     state.virtual_rewards.prev_balance = new_virtual_balance;
     save_state(deps.storage, &state)?;
 
@@ -313,32 +282,35 @@ fn claim_rewards_logic(
         .add_attribute("recipient", recipient)
         .add_attribute("rewards", rewards);
 
-    Ok(
-        match (config.staker_reward_pair, config.xprism_nexprism_pair) {
-            (Some(staker_reward_pair), Some(_)) => resp.add_submessage(SubMsg::reply_on_success(
-                Asset::cw20(config.reward_token, rewards).send_msg(
-                    staker_reward_pair,
-                    to_binary(&astroport::pair::Cw20HookMsg::Swap {
-                        belief_price: None,
-                        max_spread: None,
-                        to: None,
-                    })?,
-                )?,
-                FIRST_SWAP_REPLY_ID,
-            )),
-            (Some(staker_reward_pair), None) => {
-                resp.add_message(Asset::cw20(config.reward_token, rewards).send_msg(
-                    staker_reward_pair,
-                    to_binary(&astroport::pair::Cw20HookMsg::Swap {
-                        belief_price: None,
-                        max_spread: None,
-                        to: Some(recipient.to_string()),
-                    })?,
-                )?)
-            }
-            (None, _) => resp.add_submessage(transfer(&config.reward_token, recipient, rewards)?),
-        },
-    )
+    match (
+        config.prism_governance,
+        config.xprism_token,
+        config.nexprism_xprism_pair,
+    ) {
+        (None, None, None) => {
+            Ok(resp.add_submessage(transfer(&config.reward_token, recipient, rewards)?))
+        }
+        (Some(prism_gov), Some(_), None) => Ok(resp.add_submessage(prism_xprism_swap(
+            &config.reward_token,
+            &prism_gov,
+            rewards,
+            recipient,
+        )?)),
+        (Some(prism_gov), Some(_), Some(_)) => {
+            REPLY_CONTEXT.save(
+                deps.storage,
+                &ReplyContext {
+                    rewards_recipient: recipient.clone(),
+                },
+            )?;
+            Ok(resp.add_submessage(prism_xprism_swap_and_reply(
+                &config.reward_token,
+                &prism_gov,
+                rewards,
+            )?))
+        }
+        _ => Err(ContractError::InvalidConfig {}),
+    }
 }
 
 pub fn increase_balance(
@@ -347,15 +319,20 @@ pub fn increase_balance(
     config: &Config,
     address: String,
     amount: Uint128,
-) -> ContractResult<Response> {
+) -> Result<Response, ContractError> {
     let address = deps.api.addr_validate(&address)?;
 
     let mut state: State = load_state(deps.storage)?;
     let mut staker: Staker = load_staker(deps.storage, &address)?;
 
     state.staking_total_balance =
-        get_staking_total_balance(deps.as_ref(), config.owner.clone(), &state)?;
-    staker.balance = get_staker_balance(deps.as_ref(), config.owner.clone(), &staker, &address)?;
+        get_staking_total_balance(deps.as_ref(), config.stake_operator.clone(), &state)?;
+    staker.balance = get_staker_balance(
+        deps.as_ref(),
+        config.stake_operator.clone(),
+        &staker,
+        &address,
+    )?;
 
     let real_rewards = calculate_decimal_rewards(
         state.real_rewards.global_index,
@@ -364,8 +341,7 @@ pub fn increase_balance(
     )?;
 
     staker.real_index = state.real_rewards.global_index;
-    staker.real_pending_rewards =
-        decimal_summation_in_256(real_rewards, staker.real_pending_rewards);
+    staker.real_pending_rewards = sum(real_rewards, staker.real_pending_rewards);
 
     let virtual_rewards = calculate_decimal_rewards(
         state.virtual_rewards.global_index,
@@ -374,8 +350,7 @@ pub fn increase_balance(
     )?;
 
     staker.virtual_index = state.virtual_rewards.global_index;
-    staker.virtual_pending_rewards =
-        decimal_summation_in_256(virtual_rewards, staker.virtual_pending_rewards);
+    staker.virtual_pending_rewards = sum(virtual_rewards, staker.virtual_pending_rewards);
 
     staker.balance += amount;
     state.staking_total_balance += amount;
@@ -405,15 +380,20 @@ pub fn decrease_balance(
     config: &Config,
     address: String,
     amount: Uint128,
-) -> ContractResult<Response> {
+) -> Result<Response, ContractError> {
     let address = deps.api.addr_validate(&address)?;
 
     let mut state: State = load_state(deps.storage)?;
     let mut staker: Staker = load_staker(deps.storage, &address)?;
 
     state.staking_total_balance =
-        get_staking_total_balance(deps.as_ref(), config.owner.clone(), &state)?;
-    staker.balance = get_staker_balance(deps.as_ref(), config.owner.clone(), &staker, &address)?;
+        get_staking_total_balance(deps.as_ref(), config.stake_operator.clone(), &state)?;
+    staker.balance = get_staker_balance(
+        deps.as_ref(),
+        config.stake_operator.clone(),
+        &staker,
+        &address,
+    )?;
 
     if staker.balance < amount {
         return Err(ContractError::NotEnoughTokens {
@@ -440,8 +420,7 @@ pub fn decrease_balance(
         staker.balance,
     )?;
     staker.real_index = state.real_rewards.global_index;
-    staker.real_pending_rewards =
-        decimal_summation_in_256(real_rewards, staker.real_pending_rewards);
+    staker.real_pending_rewards = sum(real_rewards, staker.real_pending_rewards);
 
     let virtual_rewards = calculate_decimal_rewards(
         state.virtual_rewards.global_index,
@@ -449,11 +428,10 @@ pub fn decrease_balance(
         staker.balance,
     )?;
     staker.virtual_index = state.virtual_rewards.global_index;
-    staker.virtual_pending_rewards =
-        decimal_summation_in_256(virtual_rewards, staker.virtual_pending_rewards);
+    staker.virtual_pending_rewards = sum(virtual_rewards, staker.virtual_pending_rewards);
 
-    staker.balance = staker.balance.checked_sub(amount)?;
-    state.staking_total_balance = state.staking_total_balance.checked_sub(amount)?;
+    staker.balance -= amount;
+    state.staking_total_balance -= amount;
 
     save_staker(deps.storage, &address, &staker)?;
     save_state(deps.storage, &state)?;
@@ -464,7 +442,7 @@ pub fn decrease_balance(
         .add_attribute("amount", amount))
 }
 
-pub fn reward(deps: DepsMut, amount: Uint128) -> ContractResult<Response> {
+pub fn reward(deps: DepsMut, amount: Uint128) -> Result<Response, ContractError> {
     let mut state = load_state(deps.storage)?;
     state.virtual_reward_balance += amount;
     save_state(deps.storage, &state)?;
@@ -480,13 +458,13 @@ fn get_time(block: &BlockInfo) -> u64 {
 
 pub fn get_staking_total_balance(
     deps: Deps,
-    owner: Option<Addr>,
+    stake_operator: Option<Addr>,
     state: &State,
-) -> ContractResult<Uint128> {
-    Ok(if let Some(owner) = owner {
-        let s: OwnerStateResponse = deps
+) -> Result<Uint128, ContractError> {
+    Ok(if let Some(stake_operator) = stake_operator {
+        let s: StakeOperatorStateResponse = deps
             .querier
-            .query_wasm_smart(owner, &OwnerQueryMsg::State {})?;
+            .query_wasm_smart(stake_operator, &StakeOperatorQueryMsg::State {})?;
         s.total_deposit
     } else {
         state.staking_total_balance
@@ -495,14 +473,14 @@ pub fn get_staking_total_balance(
 
 pub fn get_staker_balance(
     deps: Deps,
-    owner: Option<Addr>,
+    stake_operator: Option<Addr>,
     staker: &Staker,
     addr: &Addr,
-) -> ContractResult<Uint128> {
-    Ok(if let Some(owner) = owner {
-        let s: OwnerStakerResponse = deps.querier.query_wasm_smart(
-            owner,
-            &OwnerQueryMsg::Staker {
+) -> Result<Uint128, ContractError> {
+    Ok(if let Some(stake_operator) = stake_operator {
+        let s: StakeOperatorStakerResponse = deps.querier.query_wasm_smart(
+            stake_operator,
+            &StakeOperatorQueryMsg::Staker {
                 address: addr.to_string(),
             },
         )?;
@@ -510,4 +488,36 @@ pub fn get_staker_balance(
     } else {
         staker.balance
     })
+}
+
+pub fn prism_xprism_swap(
+    prism_token: &Addr,
+    prism_gov: &Addr,
+    amount: Uint128,
+    recipient: &Addr,
+) -> StdResult<SubMsg> {
+    send(
+        prism_token,
+        prism_gov,
+        amount,
+        &prism_protocol::gov::Cw20HookMsg::MintXprism {
+            receiver: Some(recipient.to_string()),
+        },
+    )
+}
+
+pub fn prism_xprism_swap_and_reply(
+    prism_token: &Addr,
+    prism_gov: &Addr,
+    amount: Uint128,
+) -> StdResult<SubMsg> {
+    Ok(SubMsg::reply_on_success(
+        send_wasm_msg(
+            prism_token,
+            prism_gov,
+            amount,
+            &prism_protocol::gov::Cw20HookMsg::MintXprism { receiver: None },
+        )?,
+        ReplyId::XPrismTokensMinted.into(),
+    ))
 }

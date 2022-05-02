@@ -154,6 +154,32 @@ pub fn transfer(token: &Addr, recipient: &Addr, amount: Uint128) -> StdResult<Su
     }))
 }
 
+pub fn send<T: Serialize>(
+    token: &Addr,
+    recipient: &Addr,
+    amount: Uint128,
+    msg: &T,
+) -> StdResult<SubMsg> {
+    Ok(SubMsg::new(send_wasm_msg(token, recipient, amount, msg)?))
+}
+
+pub fn send_wasm_msg<T: Serialize>(
+    token: &Addr,
+    recipient: &Addr,
+    amount: Uint128,
+    msg: &T,
+) -> StdResult<WasmMsg> {
+    Ok(WasmMsg::Execute {
+        contract_addr: token.to_string(),
+        msg: to_binary(&Cw20ExecuteMsg::Send {
+            contract: recipient.to_string(),
+            amount,
+            msg: to_binary(msg)?,
+        })?,
+        funds: vec![],
+    })
+}
+
 pub fn instantiate_token(
     admin: &Addr,
     code_id: u64,
@@ -187,6 +213,18 @@ fn concat(namespace: &[u8], key: &[u8]) -> Vec<u8> {
     k
 }
 
+pub fn sum(a: Decimal, b: Decimal) -> Decimal {
+    let a: Decimal256 = a.into();
+    let b: Decimal256 = b.into();
+    (a + b).into()
+}
+
+pub fn sub(a: Decimal, b: Decimal) -> Decimal {
+    let a: Decimal256 = a.into();
+    let b: Decimal256 = b.into();
+    (a - b).into()
+}
+
 pub fn mul(a: Decimal, b: Decimal) -> Decimal {
     let a: Decimal256 = a.into();
     let b: Decimal256 = b.into();
@@ -201,4 +239,8 @@ pub fn div(a: Decimal, b: Decimal) -> Decimal {
 
 pub fn get_time(block: &BlockInfo) -> u64 {
     block.time.seconds()
+}
+
+pub fn optional_addr_validate(deps: Deps, addr: Option<String>) -> StdResult<Option<Addr>> {
+    addr.map(|addr| deps.api.addr_validate(&addr)).transpose()
 }

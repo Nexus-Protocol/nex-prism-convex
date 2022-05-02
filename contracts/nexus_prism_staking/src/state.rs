@@ -3,16 +3,22 @@ use serde::{Deserialize, Serialize};
 
 use cosmwasm_std::{Addr, Decimal, StdResult, Storage, Uint128};
 
+const KEY_CONFIG: Item<Config> = Item::new("config");
+const KEY_STATE: Item<State> = Item::new("state");
+const KEY_GOVERNANCE_UPDATE: Item<GovernanceUpdateState> = Item::new("gov_update");
+pub const STAKERS: Map<&Addr, Staker> = Map::new("state");
+pub const REPLY_CONTEXT: Item<ReplyContext> = Item::new("reply");
+
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct Config {
-    pub owner: Option<Addr>,
-    pub staking_token: Addr,
-    pub rewarder: Addr,
-    pub reward_token: Addr,
-    pub staker_reward_pair: Option<Addr>,
-    pub xprism_token: Option<Addr>,
-    pub xprism_nexprism_pair: Option<Addr>,
     pub governance: Addr,
+    pub staking_token: Addr,
+    pub stake_operator: Option<Addr>,
+    pub reward_token: Addr,
+    pub reward_operator: Addr,
+    pub xprism_token: Option<Addr>,
+    pub prism_governance: Option<Addr>,
+    pub nexprism_xprism_pair: Option<Addr>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -29,6 +35,11 @@ pub struct RewardState {
     pub prev_balance: Uint128,
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct ReplyContext {
+    pub rewards_recipient: Addr,
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Default)]
 pub struct Staker {
     pub balance: Uint128,
@@ -43,11 +54,6 @@ pub struct GovernanceUpdateState {
     pub new_governance_contract_addr: Addr,
     pub wait_approve_until: u64,
 }
-
-static KEY_CONFIG: Item<Config> = Item::new("config");
-static KEY_STATE: Item<State> = Item::new("state");
-static KEY_GOVERNANCE_UPDATE: Item<GovernanceUpdateState> = Item::new("gov_update");
-pub(crate) static STAKERS: Map<&Addr, Staker> = Map::new("state");
 
 pub fn load_state(storage: &dyn Storage) -> StdResult<State> {
     KEY_STATE.load(storage)

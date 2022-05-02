@@ -49,7 +49,7 @@ fn instantiate_staking(
     inst_config: &InstantiationConfig,
     config: &Config,
     staking_token: &Addr,
-    staker_reward_pair: Option<&Addr>,
+    prism_governance: Option<&Addr>,
     is_nexprism_xprism: bool,
     reply_id: ReplyId,
 ) -> StdResult<SubMsg> {
@@ -58,18 +58,18 @@ fn instantiate_staking(
             admin: Some(inst_config.admin.to_string()),
             code_id: inst_config.staking_code_id,
             msg: to_binary(&nexus_prism_protocol::staking::InstantiateMsg {
-                owner: None,
+                stake_operator: None,
                 staking_token: staking_token.to_string(),
-                rewarder: env.contract.address.to_string(),
+                reward_operator: env.contract.address.to_string(),
                 reward_token: config.prism_token.to_string(),
-                staker_reward_pair: staker_reward_pair.map(|x| x.to_string()),
+                prism_governance: prism_governance.map(|x| x.to_string()),
                 governance: config.governance.to_string(),
                 xprism_token: if is_nexprism_xprism {
                     Some(config.xprism_token.to_string())
                 } else {
                     None
                 },
-                xprism_nexprism_pair: if is_nexprism_xprism {
+                nexprism_xprism_pair: if is_nexprism_xprism {
                     Some(config.nexprism_xprism_pair.to_string())
                 } else {
                     None
@@ -108,7 +108,7 @@ fn instantiate_nexprism_staking(
         inst_config,
         config,
         &config.nexprism_token,
-        Some(&config.prism_xprism_pair),
+        Some(&inst_config.prism_governance),
         false,
         ReplyId::NexPrismStakingCreated,
     )
@@ -124,7 +124,7 @@ fn instantiate_psi_staking(
         inst_config,
         config,
         &inst_config.psi_token,
-        Some(&config.prism_xprism_pair),
+        Some(&inst_config.prism_governance),
         true,
         ReplyId::PsiStakingCreated,
     )
@@ -219,7 +219,7 @@ fn instantiate_nexprism_xprism_pair(
 fn transfer_virtual_rewards(staking: &Addr, amount: Uint128) -> StdResult<SubMsg> {
     Ok(SubMsg::new(WasmMsg::Execute {
         contract_addr: staking.to_string(),
-        msg: to_binary(&nexus_prism_protocol::staking::RewarderMsg::Reward { amount })?,
+        msg: to_binary(&nexus_prism_protocol::staking::RewardOperatorMsg::Reward { amount })?,
         funds: vec![],
     }))
 }
@@ -236,7 +236,7 @@ fn calc_stakers_rewards(state: &State, total_rewards: Uint128) -> (Uint128, Uint
     )
 }
 
-#[cfg_attr(not(feature = "library"), entry_point)]
+#[entry_point]
 pub fn reply(deps: DepsMut, env: Env, msg: Reply) -> Result<Response, ContractError> {
     let inst_config = INST_CONFIG.load(deps.storage)?;
     let mut config = load_config(deps.storage)?;

@@ -20,6 +20,7 @@ pub struct InstantiateMsg {
     pub xprism_token: String,
     pub yluna_token: String,
 
+    pub prism_governance: String,
     pub prism_launch_pool: String,
     pub prism_xprism_boost: String,
 

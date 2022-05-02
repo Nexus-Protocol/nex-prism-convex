@@ -1,8 +1,8 @@
 mod commands;
 pub mod contract;
 mod error;
-mod math;
 mod queries;
+mod replies_id;
 pub mod state;
 mod utils;
 
@@ -10,5 +10,3 @@ mod utils;
 #[cfg(test)]
 mod tests;
 */
-
-type ContractResult<T> = Result<T, error::ContractError>;

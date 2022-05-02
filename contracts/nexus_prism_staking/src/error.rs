@@ -1,4 +1,5 @@
-use cosmwasm_std::{OverflowError, StdError, Uint128};
+use cosmwasm_std::{StdError, Uint128};
+use cw0::PaymentError;
 use thiserror::Error;
 
 #[derive(Error, Debug, PartialEq)]
@@ -6,18 +7,17 @@ pub enum ContractError {
     #[error("{0}")]
     Std(#[from] StdError),
 
+    #[error("{0}")]
+    Payment(#[from] PaymentError),
+
     #[error("unauthorized")]
     Unauthorized,
 
-    #[error("impossible: {0}")]
-    Impossible(String),
+    #[error("unknown reply id={id}")]
+    UnknownReplyId { id: u64 },
 
-    #[error("overflow: {source}")]
-    Overflow {
-        source: OverflowError,
-        #[cfg(feature = "backtraces")]
-        backtrace: Backtrace,
-    },
+    #[error("invalid config")]
+    InvalidConfig {},
 
     #[error("no stakers")]
     NoStakers {},
@@ -31,22 +31,6 @@ pub enum ContractError {
         value: Uint128,
         required: Uint128,
     },
-}
-
-impl ContractError {
-    pub fn overflow(source: OverflowError) -> Self {
-        ContractError::Overflow {
-            source,
-            #[cfg(feature = "backtraces")]
-            backtrace: Backtrace::capture(),
-        }
-    }
-}
-
-impl From<OverflowError> for ContractError {
-    fn from(source: OverflowError) -> Self {
-        Self::overflow(source)
-    }
 }
 
 impl From<ContractError> for StdError {

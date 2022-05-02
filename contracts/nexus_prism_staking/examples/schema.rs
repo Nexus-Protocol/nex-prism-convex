@@ -3,8 +3,8 @@ use std::fs::create_dir_all;
 
 use cosmwasm_schema::{export_schema, remove_schemas, schema_for};
 use nexus_prism_protocol::staking::{
-    AnyoneMsg, ConfigResponse, ExecuteMsg, GovernanceMsg, InstantiateMsg, MigrateMsg, OwnerMsg,
-    QueryMsg, RewardsResponse, StakerResponse,
+    AnyoneMsg, ConfigResponse, ExecuteMsg, GovernanceMsg, InstantiateMsg, MigrateMsg, QueryMsg,
+    RewardsResponse, StakeOperatorMsg, StakerResponse,
 };
 
 fn main() {
@@ -17,7 +17,7 @@ fn main() {
     export_schema(&schema_for!(ExecuteMsg), &out_dir);
     export_schema(&schema_for!(AnyoneMsg), &out_dir);
     export_schema(&schema_for!(GovernanceMsg), &out_dir);
-    export_schema(&schema_for!(OwnerMsg), &out_dir);
+    export_schema(&schema_for!(StakeOperatorMsg), &out_dir);
     export_schema(&schema_for!(QueryMsg), &out_dir);
     export_schema(&schema_for!(ConfigResponse), &out_dir);
     export_schema(&schema_for!(RewardsResponse), &out_dir);

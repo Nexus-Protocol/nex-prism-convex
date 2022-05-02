@@ -72,6 +72,7 @@ pub struct InstantiationConfig {
     pub astroport_factory: Addr,
     pub nexprism_xprism_amp_coef: u64,
     pub psi_token: Addr,
+    pub prism_governance: Addr,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]

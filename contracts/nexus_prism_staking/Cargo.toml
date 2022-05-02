@@ -18,23 +18,23 @@ crate-type = ["cdylib", "rlib"]
 [features]
 # for more explicit tests, cargo test --features=backtraces
 backtraces = ["cosmwasm-std/backtraces"]
-# use library feature to disable all instantiate/execute/query exports
-library = []
 integration_tests_build = ["nexus-prism-protocol/integration_tests_build"]
 
 [dependencies]
 astroport = "1.0.1"
 cosmwasm-bignumber = "2.2.0"
-cosmwasm-std = {version = "0.16.7", features = ["iterator"]}
-cw-asset = "1.0.3"
+cosmwasm-std = "0.16.7"
 cw-storage-plus = "0.9.1"
 cw0 = "0.9.1"
+cw2 = "0.9.1"
 cw20 = "0.9.1"
 nexus-prism-protocol = {path = "../../packages/nexus-prism-protocol"}
+num_enum = "0.5.7"
+prism-protocol = {git = "https://github.com/prism-finance/prism-contracts"}
 schemars = "0.8.8"
-serde = {version = "1.0.136", default-features = false, features = ["derive"]}
-thiserror = {version = "1.0.30"}
+serde = {version = "1.0.137", default-features = false, features = ["derive"]}
+thiserror = "1.0.31"
 
 [dev-dependencies]
-cosmwasm-schema = {version = "0.16.7"}
-cosmwasm-storage = {version = "0.16.7", features = ["iterator"]}
+cosmwasm-schema = "0.16.7"
+cosmwasm-storage = "0.16.7"

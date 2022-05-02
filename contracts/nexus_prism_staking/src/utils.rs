@@ -1,5 +1,5 @@
-use crate::math::{decimal_multiplication_in_256, decimal_subtraction_in_256};
 use cosmwasm_std::{Decimal, StdError, StdResult, Uint128};
+use nexus_prism_protocol::common::{mul, sub};
 use std::str::FromStr;
 
 // calculate the reward based on the user index and the global index.
@@ -9,10 +9,7 @@ pub fn calculate_decimal_rewards(
     user_balance: Uint128,
 ) -> StdResult<Decimal> {
     let decimal_balance = Decimal::from_ratio(user_balance, Uint128::new(1));
-    Ok(decimal_multiplication_in_256(
-        decimal_subtraction_in_256(global_index, user_index),
-        decimal_balance,
-    ))
+    Ok(mul(sub(global_index, user_index), decimal_balance))
 }
 
 // calculate the reward with decimal

@@ -5,7 +5,6 @@ use crate::commands::{
 };
 use crate::queries::{query_config, query_state, simulate_update_rewards_distribution};
 use crate::replies_id::ReplyId;
-#[cfg(not(feature = "library"))]
 use cosmwasm_std::entry_point;
 use cosmwasm_std::{
     from_binary, to_binary, Addr, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdError,
@@ -27,7 +26,7 @@ use crate::state::{
 const CONTRACT_NAME: &str = "nexus.protocol:nex-prism-vault";
 const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
-#[cfg_attr(not(feature = "library"), entry_point)]
+#[entry_point]
 pub fn instantiate(
     deps: DepsMut,
     env: Env,
@@ -44,6 +43,7 @@ pub fn instantiate(
         astroport_factory: deps.api.addr_validate(&msg.astroport_factory)?,
         nexprism_xprism_amp_coef: msg.nexprism_xprism_amp_coef,
         psi_token: deps.api.addr_validate(&msg.psi_token)?,
+        prism_governance: deps.api.addr_validate(&msg.prism_governance)?,
     };
     INST_CONFIG.save(deps.storage, &inst_config)?;
 
@@ -112,7 +112,7 @@ pub fn instantiate(
         .add_attribute("action", "instantiate"))
 }
 
-#[cfg_attr(not(feature = "library"), entry_point)]
+#[entry_point]
 pub fn execute(
     deps: DepsMut,
     env: Env,
@@ -254,7 +254,7 @@ fn receive_cw20(
     }
 }
 
-#[cfg_attr(not(feature = "library"), entry_point)]
+#[entry_point]
 pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
     match msg {
         QueryMsg::Config {} => to_binary(&query_config(deps)?),
@@ -265,7 +265,7 @@ pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
     }
 }
 
-#[cfg_attr(not(feature = "library"), entry_point)]
+#[entry_point]
 pub fn migrate(deps: DepsMut, _env: Env, _msg: MigrateMsg) -> Result<Response, ContractError> {
     let ver = get_contract_version(deps.storage)?;
 
