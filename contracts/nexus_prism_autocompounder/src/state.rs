@@ -9,8 +9,7 @@ pub struct Config {
     pub auto_compounding_token: Addr,
     pub reward_token: Addr,
     pub reward_compound_pair: Addr,
-    pub governance_contract: Addr,
-    pub rewards_contract: Addr,
+    pub governance: Addr,
     pub staking_contract: Addr,
 }
 
@@ -26,10 +25,9 @@ pub struct WithdrawAction {
     pub auto_compounding_token_amount: Uint128,
 }
 
-static KEY_CONFIG: Item<Config> = Item::new("config");
-static KEY_WITHDRAW_ACTION: Item<Option<WithdrawAction>> = Item::new("withdraw_action");
-
-static KEY_GOVERNANCE_UPDATE: Item<GovernanceUpdateState> = Item::new("gov_update");
+const KEY_CONFIG: Item<Config> = Item::new("config");
+const KEY_WITHDRAW_ACTION: Item<Option<WithdrawAction>> = Item::new("withdraw_action");
+const KEY_GOVERNANCE_UPDATE: Item<GovernanceUpdateState> = Item::new("gov_update");
 
 pub fn load_config(storage: &dyn Storage) -> StdResult<Config> {
     KEY_CONFIG.load(storage)
@@ -59,16 +57,6 @@ pub fn store_withdraw_action(
 
 pub fn remove_withdraw_action(storage: &mut dyn Storage) -> StdResult<()> {
     KEY_WITHDRAW_ACTION.save(storage, &None)
-}
-
-pub fn config_set_auto_compounding_token(
-    storage: &mut dyn Storage,
-    token: Addr,
-) -> StdResult<Config> {
-    KEY_CONFIG.update(storage, |mut config: Config| -> StdResult<_> {
-        config.auto_compounding_token = token;
-        Ok(config)
-    })
 }
 
 pub fn load_gov_update(storage: &dyn Storage) -> StdResult<GovernanceUpdateState> {

@@ -143,6 +143,14 @@ pub fn mint(token: &Addr, recipient: &Addr, amount: Uint128) -> StdResult<SubMsg
     }))
 }
 
+pub fn burn(token: &Addr, amount: Uint128) -> StdResult<SubMsg> {
+    Ok(SubMsg::new(WasmMsg::Execute {
+        contract_addr: token.to_string(),
+        msg: to_binary(&Cw20ExecuteMsg::Burn { amount })?,
+        funds: vec![],
+    }))
+}
+
 pub fn transfer(token: &Addr, recipient: &Addr, amount: Uint128) -> StdResult<SubMsg> {
     Ok(SubMsg::new(WasmMsg::Execute {
         contract_addr: token.to_string(),

@@ -1,8 +1,7 @@
-use cosmwasm_std::StdError;
-use std::convert::TryFrom;
-
 mod commands;
 pub mod contract;
+mod queries;
+mod replies_id;
 mod reply_response;
 pub mod state;
 
@@ -11,37 +10,3 @@ pub mod state;
 #[allow(dead_code)]
 mod tests;
 */
-
-pub enum SubmsgIds {
-    InitAutoCompoundingToken,
-    RewardsClaimed,
-    RewardsSold,
-}
-
-impl TryFrom<u64> for SubmsgIds {
-    type Error = StdError;
-
-    fn try_from(v: u64) -> Result<Self, Self::Error> {
-        match v {
-            x if x == SubmsgIds::InitAutoCompoundingToken.id() => {
-                Ok(SubmsgIds::InitAutoCompoundingToken)
-            }
-            x if x == SubmsgIds::RewardsClaimed.id() => Ok(SubmsgIds::RewardsClaimed),
-            x if x == SubmsgIds::RewardsSold.id() => Ok(SubmsgIds::RewardsSold),
-            unknown => Err(StdError::generic_err(format!(
-                "unknown reply message id: {}",
-                unknown
-            ))),
-        }
-    }
-}
-
-impl SubmsgIds {
-    pub const fn id(&self) -> u64 {
-        match self {
-            SubmsgIds::InitAutoCompoundingToken => 0,
-            SubmsgIds::RewardsClaimed => 1,
-            SubmsgIds::RewardsSold => 2,
-        }
-    }
-}
