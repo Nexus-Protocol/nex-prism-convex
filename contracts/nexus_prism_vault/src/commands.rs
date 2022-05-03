@@ -136,6 +136,10 @@ pub fn deposit_xprism(
     sender: String,
     amount: Uint128,
 ) -> Result<Response, ContractError> {
+    let mut state = load_state(deps.storage)?;
+    state.xprism_amount_total += amount;
+    save_state(deps.storage, &config, &state)?;
+
     update_rewards_distribution_by_anyone(deps, env, &config)?;
 
     Ok(Response::new()
@@ -177,6 +181,10 @@ pub fn deposit_yluna(
     sender: String,
     amount: Uint128,
 ) -> Result<Response, ContractError> {
+    let mut state = load_state(deps.storage)?;
+    state.yluna_amount_total += amount;
+    save_state(deps.storage, &config, &state)?;
+
     update_rewards_distribution_by_anyone(deps, env, &config)?;
 
     Ok(Response::new()
@@ -218,6 +226,10 @@ pub fn withdraw_yluna(
     sender: String,
     amount: Uint128,
 ) -> Result<Response, ContractError> {
+    let mut state = load_state(deps.storage)?;
+    state.yluna_amount_total -= amount;
+    save_state(deps.storage, &config, &state)?;
+
     update_rewards_distribution_by_anyone(deps, env, &config)?;
 
     Ok(Response::new()

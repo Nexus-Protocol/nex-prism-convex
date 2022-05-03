@@ -1,4 +1,4 @@
-use cosmwasm_std::Decimal;
+use cosmwasm_std::{Decimal, Uint128};
 use cw20::Cw20ReceiveMsg;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -162,6 +162,8 @@ pub struct StateResponse {
     pub nyluna_stakers_reward_ratio: Decimal,
     pub psi_stakers_reward_ratio: Decimal,
     pub last_calculation_time: u64,
+    pub xprism_amount_total: Uint128,
+    pub yluna_amount_total: Uint128,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]

@@ -81,6 +81,8 @@ pub struct State {
     pub nyluna_stakers_reward_ratio: Decimal,
     pub psi_stakers_reward_ratio: Decimal,
     pub last_calculation_time: u64,
+    pub xprism_amount_total: Uint128,
+    pub yluna_amount_total: Uint128,
 }
 
 pub fn load_state(store: &dyn Storage) -> StdResult<State> {

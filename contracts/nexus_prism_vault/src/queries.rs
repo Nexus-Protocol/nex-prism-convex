@@ -50,6 +50,8 @@ pub fn query_state(deps: Deps) -> StdResult<StateResponse> {
         nyluna_stakers_reward_ratio: state.nyluna_stakers_reward_ratio,
         psi_stakers_reward_ratio: state.psi_stakers_reward_ratio,
         last_calculation_time: state.last_calculation_time,
+        xprism_amount_total: state.xprism_amount_total,
+        yluna_amount_total: state.yluna_amount_total,
     })
 }
 

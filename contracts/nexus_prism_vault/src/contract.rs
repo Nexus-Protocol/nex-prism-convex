@@ -5,7 +5,7 @@ use crate::commands::{
 };
 use crate::queries::{query_config, query_state, simulate_update_rewards_distribution};
 use crate::replies_id::ReplyId;
-use cosmwasm_std::entry_point;
+use cosmwasm_std::{entry_point, Uint128};
 use cosmwasm_std::{
     from_binary, to_binary, Addr, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdError,
     StdResult, SubMsg,
@@ -83,6 +83,8 @@ pub fn instantiate(
         nyluna_stakers_reward_ratio: msg.nyluna_stakers_reward_ratio,
         psi_stakers_reward_ratio: msg.psi_stakers_reward_ratio,
         last_calculation_time: 0,
+        xprism_amount_total: Uint128::zero(),
+        yluna_amount_total: Uint128::zero(),
     };
     save_state(deps.storage, &config, &initial_state)?;
 
