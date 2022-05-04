@@ -261,7 +261,7 @@ pub fn claim_virtual_rewards(
     let config = load_config(deps.storage)?;
 
     let reward_info: RewardInfoResponse = deps.querier.query_wasm_smart(
-        config.prism_launch_pool,
+        &config.prism_launch_pool,
         &prism_protocol::launch_pool::QueryMsg::RewardInfo {
             staker_addr: env.contract.address.to_string(),
         },
@@ -275,23 +275,23 @@ pub fn claim_virtual_rewards(
     )?;
 
     Ok(Response::new()
-        .add_submessage(activate_xprism_boost(&config.prism_xprism_boost)?) // needed only here
-        .add_submessage(withdraw_rewards(&config.prism_xprism_boost)?)
+        .add_submessage(activate_xprism_boost(&config.prism_launch_pool)?) // needed only here
+        .add_submessage(withdraw_rewards(&config.prism_launch_pool)?)
         .add_attribute("action", "claim_virtual_rewards"))
 }
 
-fn activate_xprism_boost(xprism_boost: &Addr) -> StdResult<SubMsg> {
+fn activate_xprism_boost(launch_pool: &Addr) -> StdResult<SubMsg> {
     Ok(SubMsg::new(WasmMsg::Execute {
-        contract_addr: xprism_boost.to_string(),
+        contract_addr: launch_pool.to_string(),
         msg: to_binary(&prism_protocol::launch_pool::ExecuteMsg::ActivateBoost {})?,
         funds: vec![],
     }))
 }
 
-fn withdraw_rewards(xprism_boost: &Addr) -> StdResult<SubMsg> {
+fn withdraw_rewards(launch_pool: &Addr) -> StdResult<SubMsg> {
     Ok(SubMsg::reply_on_success(
         WasmMsg::Execute {
-            contract_addr: xprism_boost.to_string(),
+            contract_addr: launch_pool.to_string(),
             msg: to_binary(&prism_protocol::launch_pool::ExecuteMsg::WithdrawRewards {})?,
             funds: vec![],
         },
@@ -307,14 +307,14 @@ pub fn claim_real_rewards(
     let config = load_config(deps.storage)?;
 
     Ok(Response::new()
-        .add_submessage(claim_withdrawn_rewards(&config.prism_xprism_boost)?)
+        .add_submessage(claim_withdrawn_rewards(&config.prism_launch_pool)?)
         .add_attribute("action", "claim_real_rewards"))
 }
 
-fn claim_withdrawn_rewards(xprism_boost: &Addr) -> StdResult<SubMsg> {
+fn claim_withdrawn_rewards(launch_pool: &Addr) -> StdResult<SubMsg> {
     Ok(SubMsg::reply_on_success(
         WasmMsg::Execute {
-            contract_addr: xprism_boost.to_string(),
+            contract_addr: launch_pool.to_string(),
             msg: to_binary(
                 &prism_protocol::launch_pool::ExecuteMsg::ClaimWithdrawnRewards {
                     claim_type: prism_protocol::launch_pool::ClaimType::Prism,
