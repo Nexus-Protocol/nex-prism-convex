@@ -138,7 +138,7 @@ pub fn deposit_xprism(
 ) -> Result<Response, ContractError> {
     let mut state = load_state(deps.storage)?;
     state.xprism_amount_total += amount;
-    update_rewards_distribution_by_anyone(deps, env, &config, &mut state)?;
+    update_rewards_distribution_by_anyone(deps.as_ref(), env, &config, &mut state)?;
     save_state(deps.storage, &config, &state)?;
 
     Ok(Response::new()
@@ -182,7 +182,7 @@ pub fn deposit_yluna(
 ) -> Result<Response, ContractError> {
     let mut state = load_state(deps.storage)?;
     state.yluna_amount_total += amount;
-    update_rewards_distribution_by_anyone(deps, env, &config, &mut state)?;
+    update_rewards_distribution_by_anyone(deps.as_ref(), env, &config, &mut state)?;
     save_state(deps.storage, &config, &state)?;
 
     Ok(Response::new()
@@ -226,7 +226,7 @@ pub fn withdraw_yluna(
 ) -> Result<Response, ContractError> {
     let mut state = load_state(deps.storage)?;
     state.yluna_amount_total -= amount;
-    update_rewards_distribution_by_anyone(deps, env, &config, &mut state)?;
+    update_rewards_distribution_by_anyone(deps.as_ref(), env, &config, &mut state)?;
     save_state(deps.storage, &config, &state)?;
 
     Ok(Response::new()
@@ -353,7 +353,7 @@ pub fn update_rewards_distribution_by_owner(
 }
 
 fn update_rewards_distribution_by_anyone(
-    deps: DepsMut,
+    deps: Deps,
     env: Env,
     config: &Config,
     state: &mut State,
@@ -365,7 +365,7 @@ fn update_rewards_distribution_by_anyone(
         }
 
         state.last_calculation_time = cur_time;
-        state = &mut update_rewards_distribution(deps.as_ref(), env, config, &state)?;
+        *state = update_rewards_distribution(deps, env, config, state)?;
         return Ok(());
     }
 
