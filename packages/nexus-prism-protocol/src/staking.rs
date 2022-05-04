@@ -73,6 +73,7 @@ pub enum StakeOperatorMsg {
 #[serde(rename_all = "snake_case")]
 pub enum QueryMsg {
     Config {},
+    State {},
     Rewards { address: String },
     Staker { address: String },
 }
@@ -87,6 +88,12 @@ pub struct ConfigResponse {
     pub xprism_token: Option<String>,
     pub prism_governance: Option<String>,
     pub nexprism_xprism_pair: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+pub struct StateResponse {
+    pub staking_total_balance: Uint128,
+    pub virtual_reward_balance: Uint128,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]

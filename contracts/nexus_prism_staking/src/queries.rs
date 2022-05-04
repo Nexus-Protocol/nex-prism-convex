@@ -6,7 +6,7 @@ use crate::{
 use cosmwasm_std::{Decimal, Deps, Env, StdResult, Uint128};
 use nexus_prism_protocol::{
     common::{query_token_balance, sum},
-    staking::{ConfigResponse, RewardsResponse, StakerResponse},
+    staking::{ConfigResponse, RewardsResponse, StakerResponse, StateResponse},
 };
 
 use crate::state::{load_config, load_staker, load_state, Config};
@@ -23,6 +23,15 @@ pub fn query_config(deps: Deps) -> StdResult<ConfigResponse> {
         xprism_token: config.xprism_token.map(|addr| addr.to_string()),
         prism_governance: config.prism_governance.map(|addr| addr.to_string()),
         nexprism_xprism_pair: config.nexprism_xprism_pair.map(|addr| addr.to_string()),
+    })
+}
+
+pub fn query_state(deps: Deps) -> StdResult<StateResponse> {
+    let state = load_state(deps.storage)?;
+
+    Ok(StateResponse {
+        staking_total_balance: state.staking_total_balance,
+        virtual_reward_balance: state.virtual_reward_balance,
     })
 }
 

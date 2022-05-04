@@ -182,6 +182,7 @@ pub fn reply(deps: DepsMut, env: Env, msg: Reply) -> Result<Response, ContractEr
 pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
     match msg {
         QueryMsg::Config {} => to_binary(&queries::query_config(deps)?),
+        QueryMsg::State {} => to_binary(&queries::query_state(deps)?),
         QueryMsg::Rewards { address } => to_binary(&queries::query_rewards(deps, address)?),
         QueryMsg::Staker { address } => to_binary(&queries::query_staker(deps, env, address)?),
     }
