@@ -44,6 +44,7 @@ pub fn instantiate(
         nexprism_xprism_amp_coef: msg.nexprism_xprism_amp_coef,
         psi_token: deps.api.addr_validate(&msg.psi_token)?,
         prism_governance: deps.api.addr_validate(&msg.prism_governance)?,
+        nexprism_xprism_pair: Addr::unchecked(""),
     };
     INST_CONFIG.save(deps.storage, &inst_config)?;
 
@@ -64,7 +65,6 @@ pub fn instantiate(
         psi_staking: Addr::unchecked(""),
         nyluna_staking: Addr::unchecked(""),
 
-        nexprism_xprism_pair: Addr::unchecked(""),
         prism_xprism_pair: deps.api.addr_validate(&msg.prism_xprism_pair)?,
         prism_yluna_pair: deps.api.addr_validate(&msg.prism_yluna_pair)?,
 

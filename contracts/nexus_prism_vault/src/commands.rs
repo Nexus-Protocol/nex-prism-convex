@@ -365,7 +365,7 @@ fn update_rewards_distribution_by_anyone(
         }
 
         state.last_calculation_time = cur_time;
-        *state = update_rewards_distribution(deps, env, config, &state)?;
+        *state = update_rewards_distribution(deps, env, config, state)?;
         return Ok(());
     }
 

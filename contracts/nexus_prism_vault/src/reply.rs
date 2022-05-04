@@ -70,7 +70,7 @@ fn instantiate_staking(
                     None
                 },
                 nexprism_xprism_pair: if is_nexprism_xprism {
-                    Some(config.nexprism_xprism_pair.to_string())
+                    Some(inst_config.nexprism_xprism_pair.to_string())
                 } else {
                     None
                 },
@@ -167,7 +167,7 @@ fn instantiate_nexprism_autocompounder(
         config,
         &config.nexprism_token,
         &config.xprism_token,
-        &config.nexprism_xprism_pair,
+        &inst_config.nexprism_xprism_pair,
         &config.nexprism_staking,
         ReplyId::NexPrismAutocompounderCreated,
     )
@@ -237,7 +237,7 @@ fn calc_stakers_rewards(state: &State, total_rewards: Uint128) -> (Uint128, Uint
 
 #[entry_point]
 pub fn reply(deps: DepsMut, env: Env, msg: Reply) -> Result<Response, ContractError> {
-    let inst_config = INST_CONFIG.load(deps.storage)?;
+    let mut inst_config = INST_CONFIG.load(deps.storage)?;
     let mut config = load_config(deps.storage)?;
     let state = load_state(deps.storage)?;
 
@@ -267,14 +267,14 @@ pub fn reply(deps: DepsMut, env: Env, msg: Reply) -> Result<Response, ContractEr
         }
 
         ReplyId::NexPrismXPrismPairCreated => {
-            config.nexprism_xprism_pair = get_pair_addr(msg)?;
-            save_config(deps.storage, &config)?;
+            inst_config.nexprism_xprism_pair = get_pair_addr(msg)?;
+            INST_CONFIG.save(deps.storage, &inst_config)?;
 
             Ok(Response::new()
                 .add_submessage(instantiate_psi_staking(&env, &inst_config, &config)?)
                 .add_submessage(instantiate_nexprism_autocompounder(&inst_config, &config)?)
                 .add_attribute("action", "nexprism_xprism_pair_instantiated")
-                .add_attribute("nexprism_xprism_pair", config.nexprism_xprism_pair))
+                .add_attribute("nexprism_xprism_pair", inst_config.nexprism_xprism_pair))
         }
 
         ReplyId::NexPrismStakingCreated => {

@@ -28,7 +28,6 @@ pub fn query_config(deps: Deps) -> StdResult<ConfigResponse> {
         psi_staking: config.psi_staking.to_string(),
         nyluna_staking: config.nyluna_staking.to_string(),
 
-        nexprism_xprism_pair: config.nexprism_xprism_pair.to_string(),
         prism_xprism_pair: config.prism_xprism_pair.to_string(),
         prism_yluna_pair: config.prism_yluna_pair.to_string(),
 
