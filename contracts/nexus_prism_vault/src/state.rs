@@ -29,7 +29,6 @@ pub struct Config {
     pub psi_staking: Addr,
     pub nyluna_staking: Addr,
 
-    pub nexprism_xprism_pair: Addr,
     pub prism_xprism_pair: Addr,
     pub prism_yluna_pair: Addr,
 
@@ -70,6 +69,7 @@ pub struct InstantiationConfig {
     pub staking_code_id: u64,
     pub autocompounder_code_id: u64,
     pub astroport_factory: Addr,
+    pub nexprism_xprism_pair: Addr,
     pub nexprism_xprism_amp_coef: u64,
     pub psi_token: Addr,
     pub prism_governance: Addr,

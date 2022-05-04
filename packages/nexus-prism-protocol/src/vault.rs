@@ -143,7 +143,6 @@ pub struct ConfigResponse {
     pub psi_staking: String,
     pub nyluna_staking: String,
 
-    pub nexprism_xprism_pair: String,
     pub prism_xprism_pair: String,
     pub prism_yluna_pair: String,
 
