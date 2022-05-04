@@ -369,8 +369,6 @@ fn update_rewards_distribution_by_anyone(
         }
 
         state.last_calculation_time = cur_time;
-        save_state(deps.storage, config, &state)?;
-
         let new_state = update_rewards_distribution(deps.as_ref(), env, config, &state)?;
         save_state(deps.storage, config, &new_state)?;
     }
