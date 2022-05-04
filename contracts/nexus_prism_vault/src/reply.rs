@@ -44,10 +44,12 @@ fn get_pair_addr(msg: Reply) -> StdResult<Addr> {
         .ok_or_else(|| StdError::generic_err("Failed to create pair"))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn instantiate_staking(
     env: &Env,
     inst_config: &InstantiationConfig,
     config: &Config,
+    stake_operator: Option<&Addr>,
     staking_token: &Addr,
     prism_governance: Option<&Addr>,
     is_nexprism_xprism: bool,
@@ -58,7 +60,7 @@ fn instantiate_staking(
             admin: Some(inst_config.admin.to_string()),
             code_id: inst_config.staking_code_id,
             msg: to_binary(&nexus_prism_protocol::staking::InstantiateMsg {
-                stake_operator: None,
+                stake_operator: stake_operator.map(|x| x.to_string()),
                 staking_token: staking_token.to_string(),
                 reward_operator: env.contract.address.to_string(),
                 reward_token: config.prism_token.to_string(),
@@ -91,6 +93,7 @@ fn instantiate_nyluna_staking(
         env,
         inst_config,
         config,
+        None,
         &config.nyluna_token,
         None,
         false,
@@ -107,6 +110,7 @@ fn instantiate_nexprism_staking(
         env,
         inst_config,
         config,
+        None,
         &config.nexprism_token,
         Some(&inst_config.prism_governance),
         false,
@@ -123,6 +127,7 @@ fn instantiate_psi_staking(
         env,
         inst_config,
         config,
+        Some(&config.governance),
         &inst_config.psi_token,
         Some(&inst_config.prism_governance),
         true,
