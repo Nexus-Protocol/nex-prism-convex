@@ -138,9 +138,8 @@ pub fn deposit_xprism(
 ) -> Result<Response, ContractError> {
     let mut state = load_state(deps.storage)?;
     state.xprism_amount_total += amount;
+    update_rewards_distribution_by_anyone(deps, env, &config, &mut state)?;
     save_state(deps.storage, &config, &state)?;
-
-    update_rewards_distribution_by_anyone(deps, env, &config)?;
 
     Ok(Response::new()
         .add_submessage(mint(
@@ -183,9 +182,8 @@ pub fn deposit_yluna(
 ) -> Result<Response, ContractError> {
     let mut state = load_state(deps.storage)?;
     state.yluna_amount_total += amount;
+    update_rewards_distribution_by_anyone(deps, env, &config, &mut state)?;
     save_state(deps.storage, &config, &state)?;
-
-    update_rewards_distribution_by_anyone(deps, env, &config)?;
 
     Ok(Response::new()
         .add_submessage(mint(
@@ -228,9 +226,8 @@ pub fn withdraw_yluna(
 ) -> Result<Response, ContractError> {
     let mut state = load_state(deps.storage)?;
     state.yluna_amount_total -= amount;
+    update_rewards_distribution_by_anyone(deps, env, &config, &mut state)?;
     save_state(deps.storage, &config, &state)?;
-
-    update_rewards_distribution_by_anyone(deps, env, &config)?;
 
     Ok(Response::new()
         .add_submessage(withdraw_from_launch_pool(
@@ -359,18 +356,17 @@ fn update_rewards_distribution_by_anyone(
     deps: DepsMut,
     env: Env,
     config: &Config,
+    state: &mut State,
 ) -> Result<(), ContractError> {
     if let Some(period) = config.rewards_distribution_update_period_secs {
-        let mut state = load_state(deps.storage)?;
-
         let cur_time = get_time(&env.block);
         if state.last_calculation_time + period < cur_time {
             return Ok(());
         }
 
         state.last_calculation_time = cur_time;
-        let new_state = update_rewards_distribution(deps.as_ref(), env, config, &state)?;
-        save_state(deps.storage, config, &new_state)?;
+        state = &mut update_rewards_distribution(deps.as_ref(), env, config, &state)?;
+        return Ok(());
     }
 
     Ok(())
