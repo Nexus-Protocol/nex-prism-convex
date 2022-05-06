@@ -119,5 +119,5 @@ pub struct GovernanceUpdateState {
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct ReplyContext {
-    pub reward_balance: Uint128,
+    pub vested_prism_balance: Uint128,
 }

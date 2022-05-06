@@ -275,28 +275,15 @@ fn withdraw_from_launch_pool(launch_pool: &Addr, amount: Uint128) -> StdResult<S
 
 pub fn claim_virtual_rewards(
     deps: DepsMut,
-    env: Env,
+    _env: Env,
     _info: MessageInfo,
 ) -> Result<Response, ContractError> {
     let config = load_config(deps.storage)?;
 
-    let vesting_status: VestingStatusResponse = deps.querier.query_wasm_smart(
-        &config.prism_launch_pool,
-        &prism_protocol::launch_pool::QueryMsg::VestingStatus {
-            staker_addr: env.contract.address.to_string(),
-        },
-    )?;
-
-    let mut balance_total = Uint128::zero();
-    for (_, balance) in vesting_status.scheduled_vests {
-        balance_total += balance;
-    }
-
     Ok(Response::new()
         .add_submessage(activate_xprism_boost(&config.prism_launch_pool)?) // needed only here
         .add_submessage(withdraw_rewards(&config.prism_launch_pool)?)
-        .add_attribute("action", "claim_virtual_rewards")
-        .add_attribute("vesting_balance_start", balance_total))
+        .add_attribute("action", "claim_virtual_rewards"))
 }
 
 fn activate_xprism_boost(launch_pool: &Addr) -> StdResult<SubMsg> {
