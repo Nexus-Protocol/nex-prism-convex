@@ -290,7 +290,7 @@ fn claim_rewards_logic(
         (None, None, None) => {
             Ok(resp.add_submessage(transfer(&config.reward_token, recipient, rewards)?))
         }
-        (Some(prism_gov), Some(_), None) => Ok(resp.add_submessage(prism_xprism_swap(
+        (Some(prism_gov), None, None) => Ok(resp.add_submessage(prism_xprism_swap(
             &config.reward_token,
             &prism_gov,
             rewards,

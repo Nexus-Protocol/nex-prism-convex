@@ -1,13 +1,12 @@
 use std::convert::TryFrom;
 
-#[cfg(not(feature = "library"))]
 use cosmwasm_std::entry_point;
 use cosmwasm_std::{
     to_binary, Addr, CosmosMsg, DepsMut, Env, Reply, Response, StdError, StdResult, SubMsg,
     Uint128, WasmMsg,
 };
 use nexus_prism_protocol::common::{query_token_balance, transfer};
-use prism_protocol::launch_pool::RewardInfoResponse;
+use prism_protocol::launch_pool::{RewardInfoResponse, VestingStatusResponse};
 use protobuf::Message;
 
 use crate::{
@@ -15,8 +14,8 @@ use crate::{
     replies_id::ReplyId,
     reply_response::MsgInstantiateContractResponse,
     state::{
-        load_config, load_state, save_config, Config, InstantiationConfig, State, INST_CONFIG,
-        REPLY_CONTEXT,
+        load_config, load_state, save_config, Config, InstantiationConfig, ReplyContext, State,
+        INST_CONFIG, REPLY_CONTEXT,
     },
 };
 
@@ -223,7 +222,9 @@ fn instantiate_nexprism_xprism_pair(
 fn transfer_virtual_rewards(staking: &Addr, amount: Uint128) -> StdResult<SubMsg> {
     Ok(SubMsg::new(WasmMsg::Execute {
         contract_addr: staking.to_string(),
-        msg: to_binary(&nexus_prism_protocol::staking::RewardOperatorMsg::Reward { amount })?,
+        msg: to_binary(&nexus_prism_protocol::staking::ExecuteMsg::RewardOperator {
+            msg: nexus_prism_protocol::staking::RewardOperatorMsg::Reward { amount },
+        })?,
         funds: vec![],
     }))
 }
@@ -318,15 +319,46 @@ pub fn reply(deps: DepsMut, env: Env, msg: Reply) -> Result<Response, ContractEr
             .add_attribute("action", "nyluna_autocompounder_instantiated")
             .add_attribute("nyluna_autocompounder", get_addr(msg)?)),
 
-        ReplyId::VirtualRewardsClaimed => {
-            let reply_context = REPLY_CONTEXT.load(deps.storage)?;
+        ReplyId::XPrismBoostActivated => {
             let reward_info: RewardInfoResponse = deps.querier.query_wasm_smart(
-                config.prism_launch_pool,
+                &config.prism_launch_pool,
                 &prism_protocol::launch_pool::QueryMsg::RewardInfo {
                     staker_addr: env.contract.address.to_string(),
                 },
             )?;
-            let claimed_rewards = reward_info.pending_reward - reply_context.reward_balance;
+
+            let reply_ctx = ReplyContext {
+                reward_balance: reward_info.pending_reward,
+            };
+            REPLY_CONTEXT.save(deps.storage, &reply_ctx)?;
+
+            Ok(Response::new()
+                .add_attribute("action", "xprism_boost_activated")
+                .add_attribute("virtual_rewards_amount", reply_ctx.reward_balance))
+        }
+
+        ReplyId::VirtualRewardsClaimed => {
+            let reply_context = REPLY_CONTEXT.load(deps.storage)?;
+            let reward_info: RewardInfoResponse = deps.querier.query_wasm_smart(
+                &config.prism_launch_pool,
+                &prism_protocol::launch_pool::QueryMsg::RewardInfo {
+                    staker_addr: env.contract.address.to_string(),
+                },
+            )?;
+
+            let vesting_status: VestingStatusResponse = deps.querier.query_wasm_smart(
+                &config.prism_launch_pool,
+                &prism_protocol::launch_pool::QueryMsg::VestingStatus {
+                    staker_addr: env.contract.address.to_string(),
+                },
+            )?;
+
+            let mut balance_total = Uint128::zero();
+            for (_, balance) in vesting_status.scheduled_vests {
+                balance_total += balance;
+            }
+
+            let claimed_rewards = reply_context.reward_balance - reward_info.pending_reward;
             let (nexprism_stakers_rewards, nyluna_stakers_rewards, psi_stakers_rewards) =
                 calc_stakers_rewards(&state, claimed_rewards);
 
@@ -343,6 +375,10 @@ pub fn reply(deps: DepsMut, env: Env, msg: Reply) -> Result<Response, ContractEr
                     &config.psi_staking,
                     psi_stakers_rewards,
                 )?)
+                .add_attribute("reply_context_balance", reply_context.reward_balance)
+                .add_attribute("pending_reward", reward_info.pending_reward)
+                .add_attribute("claimed_rewards", claimed_rewards)
+                .add_attribute("vesting_balance_end", balance_total)
                 .add_attribute("action", "virtual_rewards_claimed")
                 .add_attribute("nexprism_stakers_rewards", nexprism_stakers_rewards)
                 .add_attribute("nyluna_stakers_rewards", nyluna_stakers_rewards)

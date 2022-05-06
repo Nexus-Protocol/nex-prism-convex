@@ -3,13 +3,13 @@ use cosmwasm_std::{
     to_binary, Addr, Decimal, Deps, DepsMut, Env, MessageInfo, Response, StdError, StdResult,
     SubMsg, Uint128, WasmMsg,
 };
-use cw20::Cw20ExecuteMsg;
+use integer_sqrt::IntegerSquareRoot;
 use nexus_prism_protocol::{
     cfg_addr, cfg_var,
-    common::{div, get_price, get_time, mint, mul, transfer},
+    common::{div, get_price, get_time, mint, mul, send, transfer},
 };
 use prism_protocol::{
-    launch_pool::{DistributionStatusResponse, RewardInfoResponse},
+    launch_pool::{DistributionStatusResponse, RewardInfoResponse, VestingStatusResponse},
     xprism_boost::UserInfo,
 };
 
@@ -17,8 +17,8 @@ use crate::{
     error::ContractError,
     replies_id::ReplyId,
     state::{
-        load_config, load_state, save_config, save_state, Config, GovernanceUpdateState,
-        ReplyContext, State, GOVERNANCE_UPDATE, REPLY_CONTEXT,
+        load_config, load_state, save_config, save_state, Config, GovernanceUpdateState, State,
+        GOVERNANCE_UPDATE,
     },
 };
 
@@ -128,6 +128,29 @@ pub fn update_config_by_governance(
     Ok(Response::new().add_attribute("action", "update_config"))
 }
 
+fn claim_virtual_rewards_from_prism(env: &Env) -> StdResult<SubMsg> {
+    Ok(SubMsg::new(WasmMsg::Execute {
+        contract_addr: env.contract.address.to_string(),
+        msg: to_binary(&nexus_prism_protocol::vault::ExecuteMsg::ClaimVirtualRewards {})?,
+        funds: vec![],
+    }))
+}
+
+fn claim_real_rewards_from_prism(env: &Env) -> StdResult<SubMsg> {
+    Ok(SubMsg::new(WasmMsg::Execute {
+        contract_addr: env.contract.address.to_string(),
+        msg: to_binary(&nexus_prism_protocol::vault::ExecuteMsg::ClaimRealRewards {})?,
+        funds: vec![],
+    }))
+}
+
+fn claim_all_rewards_from_prism(env: &Env) -> StdResult<Vec<SubMsg>> {
+    Ok(vec![
+        claim_virtual_rewards_from_prism(env)?,
+        claim_real_rewards_from_prism(env)?,
+    ])
+}
+
 pub fn deposit_xprism(
     deps: DepsMut,
     env: Env,
@@ -138,7 +161,7 @@ pub fn deposit_xprism(
 ) -> Result<Response, ContractError> {
     let mut state = load_state(deps.storage)?;
     state.xprism_amount_total += amount;
-    update_rewards_distribution_by_anyone(deps.as_ref(), env, &config, &mut state)?;
+    update_rewards_distribution_by_anyone(deps.as_ref(), env.clone(), &config, &mut state)?;
     save_state(deps.storage, &config, &state)?;
 
     Ok(Response::new()
@@ -152,6 +175,7 @@ pub fn deposit_xprism(
             &config.xprism_token,
             amount,
         )?)
+        .add_submessages(claim_all_rewards_from_prism(&env)?)
         .add_attribute("action", "deposit_xprism")
         .add_attribute("amount", amount))
 }
@@ -161,15 +185,12 @@ fn deposit_to_xprism_boost(
     xprism_token: &Addr,
     amount: Uint128,
 ) -> StdResult<SubMsg> {
-    Ok(SubMsg::new(WasmMsg::Execute {
-        contract_addr: xprism_token.to_string(),
-        msg: to_binary(&Cw20ExecuteMsg::Send {
-            contract: xprism_boost.to_string(),
-            amount,
-            msg: to_binary(&prism_protocol::xprism_boost::Cw20HookMsg::Bond { user: None })?,
-        })?,
-        funds: vec![],
-    }))
+    send(
+        xprism_token,
+        xprism_boost,
+        amount,
+        &prism_protocol::xprism_boost::Cw20HookMsg::Bond { user: None },
+    )
 }
 
 pub fn deposit_yluna(
@@ -182,7 +203,7 @@ pub fn deposit_yluna(
 ) -> Result<Response, ContractError> {
     let mut state = load_state(deps.storage)?;
     state.yluna_amount_total += amount;
-    update_rewards_distribution_by_anyone(deps.as_ref(), env, &config, &mut state)?;
+    update_rewards_distribution_by_anyone(deps.as_ref(), env.clone(), &config, &mut state)?;
     save_state(deps.storage, &config, &state)?;
 
     Ok(Response::new()
@@ -196,6 +217,7 @@ pub fn deposit_yluna(
             &config.yluna_token,
             amount,
         )?)
+        .add_submessages(claim_all_rewards_from_prism(&env)?)
         .add_attribute("action", "deposit_yluna")
         .add_attribute("amount", amount))
 }
@@ -205,15 +227,12 @@ fn deposit_to_launch_pool(
     yluna_token: &Addr,
     amount: Uint128,
 ) -> StdResult<SubMsg> {
-    Ok(SubMsg::new(WasmMsg::Execute {
-        contract_addr: yluna_token.to_string(),
-        msg: to_binary(&Cw20ExecuteMsg::Send {
-            contract: launch_pool.to_string(),
-            amount,
-            msg: to_binary(&prism_protocol::launch_pool::Cw20HookMsg::Bond {})?,
-        })?,
-        funds: vec![],
-    }))
+    send(
+        yluna_token,
+        launch_pool,
+        amount,
+        &prism_protocol::launch_pool::Cw20HookMsg::Bond {},
+    )
 }
 
 pub fn withdraw_yluna(
@@ -226,7 +245,7 @@ pub fn withdraw_yluna(
 ) -> Result<Response, ContractError> {
     let mut state = load_state(deps.storage)?;
     state.yluna_amount_total -= amount;
-    update_rewards_distribution_by_anyone(deps.as_ref(), env, &config, &mut state)?;
+    update_rewards_distribution_by_anyone(deps.as_ref(), env.clone(), &config, &mut state)?;
     save_state(deps.storage, &config, &state)?;
 
     Ok(Response::new()
@@ -239,6 +258,7 @@ pub fn withdraw_yluna(
             &Addr::unchecked(sender),
             amount,
         )?)
+        .add_submessages(claim_all_rewards_from_prism(&env)?)
         .add_attribute("action", "withdraw_yluna")
         .add_attribute("amount", amount))
 }
@@ -260,32 +280,34 @@ pub fn claim_virtual_rewards(
 ) -> Result<Response, ContractError> {
     let config = load_config(deps.storage)?;
 
-    let reward_info: RewardInfoResponse = deps.querier.query_wasm_smart(
+    let vesting_status: VestingStatusResponse = deps.querier.query_wasm_smart(
         &config.prism_launch_pool,
-        &prism_protocol::launch_pool::QueryMsg::RewardInfo {
+        &prism_protocol::launch_pool::QueryMsg::VestingStatus {
             staker_addr: env.contract.address.to_string(),
         },
     )?;
 
-    REPLY_CONTEXT.save(
-        deps.storage,
-        &ReplyContext {
-            reward_balance: reward_info.pending_reward,
-        },
-    )?;
+    let mut balance_total = Uint128::zero();
+    for (_, balance) in vesting_status.scheduled_vests {
+        balance_total += balance;
+    }
 
     Ok(Response::new()
         .add_submessage(activate_xprism_boost(&config.prism_launch_pool)?) // needed only here
         .add_submessage(withdraw_rewards(&config.prism_launch_pool)?)
-        .add_attribute("action", "claim_virtual_rewards"))
+        .add_attribute("action", "claim_virtual_rewards")
+        .add_attribute("vesting_balance_start", balance_total))
 }
 
 fn activate_xprism_boost(launch_pool: &Addr) -> StdResult<SubMsg> {
-    Ok(SubMsg::new(WasmMsg::Execute {
-        contract_addr: launch_pool.to_string(),
-        msg: to_binary(&prism_protocol::launch_pool::ExecuteMsg::ActivateBoost {})?,
-        funds: vec![],
-    }))
+    Ok(SubMsg::reply_on_success(
+        WasmMsg::Execute {
+            contract_addr: launch_pool.to_string(),
+            msg: to_binary(&prism_protocol::launch_pool::ExecuteMsg::ActivateBoost {})?,
+            funds: vec![],
+        },
+        ReplyId::XPrismBoostActivated.into(),
+    ))
 }
 
 fn withdraw_rewards(launch_pool: &Addr) -> StdResult<SubMsg> {
@@ -301,14 +323,24 @@ fn withdraw_rewards(launch_pool: &Addr) -> StdResult<SubMsg> {
 
 pub fn claim_real_rewards(
     deps: DepsMut,
-    _env: Env,
+    env: Env,
     _info: MessageInfo,
 ) -> Result<Response, ContractError> {
+    let res = Response::new().add_attribute("action", "claim_real_rewards");
+
     let config = load_config(deps.storage)?;
 
-    Ok(Response::new()
-        .add_submessage(claim_withdrawn_rewards(&config.prism_launch_pool)?)
-        .add_attribute("action", "claim_real_rewards"))
+    let vesting_status: VestingStatusResponse = deps.querier.query_wasm_smart(
+        &config.prism_launch_pool,
+        &prism_protocol::launch_pool::QueryMsg::VestingStatus {
+            staker_addr: env.contract.address.to_string(),
+        },
+    )?;
+    if vesting_status.withdrawable.is_zero() {
+        return Ok(res);
+    }
+
+    Ok(res.add_submessage(claim_withdrawn_rewards(&config.prism_launch_pool)?))
 }
 
 fn claim_withdrawn_rewards(launch_pool: &Addr) -> StdResult<SubMsg> {
@@ -503,7 +535,8 @@ fn calculate_inner(
 ) -> Value {
     let a = base_ratio * Decimal256::from_ratio(yluna_total - yluna, yluna_total * yluna_total);
     let b = Decimal256::from_uint256(weight_total - weight);
-    let c = b + Decimal::from_ratio(ampl * yluna, 1u64).sqrt().into();
+    let big_sqrt = (Uint128::from(ampl).u128() * Uint128::from(yluna).u128()).integer_sqrt();
+    let c = b + Decimal256::from_uint256(big_sqrt);
     let d = (Decimal256::one() - base_ratio)
         * b
         * Decimal256::from(Decimal::from_ratio(ampl, yluna).sqrt())
@@ -514,6 +547,40 @@ fn calculate_inner(
         std::cmp::Ordering::Greater => Value::Positive,
         std::cmp::Ordering::Less => Value::Negative,
         std::cmp::Ordering::Equal => Value::Zero,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::str::FromStr;
+
+    use cosmwasm_bignumber::{Decimal256, Uint256};
+
+    use super::calculate_inner;
+
+    #[test]
+    fn calculation_fails_when_no_more_bonds_available() {
+        let base_ratio = Decimal256::from_str("0.8").unwrap();
+        let xprism = Uint256::from_str("2749769917500000").unwrap();
+        let yluna_total = Uint256::from_str("5000000000").unwrap();
+        let yluna = Uint256::from_str("5000000000").unwrap();
+        let weight_total = Uint256::from_str("31179386419").unwrap();
+        let weight = Uint256::from_str("31179386419").unwrap();
+        let ampl = Uint256::from_str("194430827499").unwrap();
+        let yluna_price = Decimal256::one();
+        let xprism_price = Decimal256::one();
+
+        calculate_inner(
+            base_ratio,
+            xprism,
+            yluna_total,
+            yluna,
+            weight_total,
+            weight,
+            ampl,
+            yluna_price,
+            xprism_price,
+        );
     }
 }
 

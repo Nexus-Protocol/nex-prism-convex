@@ -56,8 +56,8 @@ impl From<OrderBy> for Order {
 }
 
 pub fn get_price(deps: Deps, pair: &Addr, token1: &Addr, token2: &Addr) -> StdResult<Decimal> {
-    let balance1 = query_token_balance(deps, pair, token1);
-    let balance2 = query_token_balance(deps, pair, token2);
+    let balance1 = query_token_balance(deps, token1, pair);
+    let balance2 = query_token_balance(deps, token2, pair);
     if balance1.is_zero() || balance2.is_zero() {
         return Err(StdError::generic_err(format!("no tokens in pair {}", pair)));
     }

@@ -11,6 +11,7 @@ pub enum ReplyId {
     NexPrismXPrismPairCreated,
     NexPrismAutocompounderCreated,
     NYLunaAutocompounderCreated,
+    XPrismBoostActivated,
     VirtualRewardsClaimed,
     RealRewardsClaimed,
 }
