@@ -229,6 +229,16 @@ fn transfer_virtual_rewards(staking: &Addr, amount: Uint128) -> StdResult<SubMsg
     }))
 }
 
+fn update_staking_global_index(staking: &Addr) -> StdResult<SubMsg> {
+    Ok(SubMsg::new(WasmMsg::Execute {
+        contract_addr: staking.to_string(),
+        msg: to_binary(&nexus_prism_protocol::staking::ExecuteMsg::Anyone {
+            anyone_msg: nexus_prism_protocol::staking::AnyoneMsg::UpdateGlobalIndex {},
+        })?,
+        funds: vec![],
+    }))
+}
+
 fn calc_stakers_rewards(state: &State, total_rewards: Uint128) -> (Uint128, Uint128, Uint128) {
     let nexprism_stakers_rewards = total_rewards * state.nexprism_stakers_reward_ratio;
     let nyluna_stakers_rewards = total_rewards * state.nyluna_stakers_reward_ratio;
@@ -359,22 +369,28 @@ pub fn reply(deps: DepsMut, env: Env, msg: Reply) -> Result<Response, ContractEr
 
             let mut resp = Response::new();
             if !nexprism_stakers_rewards.is_zero() {
-                resp = resp.add_submessage(transfer_virtual_rewards(
-                    &config.nexprism_staking,
-                    nexprism_stakers_rewards,
-                )?);
+                resp = resp
+                    .add_submessage(transfer_virtual_rewards(
+                        &config.nexprism_staking,
+                        nexprism_stakers_rewards,
+                    )?)
+                    .add_submessage(update_staking_global_index(&config.nexprism_staking)?);
             }
             if !nyluna_stakers_rewards.is_zero() {
-                resp = resp.add_submessage(transfer_virtual_rewards(
-                    &config.nyluna_staking,
-                    nyluna_stakers_rewards,
-                )?);
+                resp = resp
+                    .add_submessage(transfer_virtual_rewards(
+                        &config.nyluna_staking,
+                        nyluna_stakers_rewards,
+                    )?)
+                    .add_submessage(update_staking_global_index(&config.nyluna_staking)?);
             }
             if !psi_stakers_rewards.is_zero() {
-                resp = resp.add_submessage(transfer_virtual_rewards(
-                    &config.psi_staking,
-                    psi_stakers_rewards,
-                )?);
+                resp = resp
+                    .add_submessage(transfer_virtual_rewards(
+                        &config.psi_staking,
+                        psi_stakers_rewards,
+                    )?)
+                    .add_submessage(update_staking_global_index(&config.psi_staking)?);
             }
 
             Ok(resp
@@ -393,25 +409,31 @@ pub fn reply(deps: DepsMut, env: Env, msg: Reply) -> Result<Response, ContractEr
 
             let mut resp = Response::new();
             if !nexprism_stakers_rewards.is_zero() {
-                resp = resp.add_submessage(transfer(
-                    &config.prism_token,
-                    &config.nexprism_staking,
-                    nexprism_stakers_rewards,
-                )?);
+                resp = resp
+                    .add_submessage(transfer(
+                        &config.prism_token,
+                        &config.nexprism_staking,
+                        nexprism_stakers_rewards,
+                    )?)
+                    .add_submessage(update_staking_global_index(&config.nexprism_staking)?);
             }
             if !nyluna_stakers_rewards.is_zero() {
-                resp = resp.add_submessage(transfer(
-                    &config.prism_token,
-                    &config.nyluna_staking,
-                    nyluna_stakers_rewards,
-                )?);
+                resp = resp
+                    .add_submessage(transfer(
+                        &config.prism_token,
+                        &config.nyluna_staking,
+                        nyluna_stakers_rewards,
+                    )?)
+                    .add_submessage(update_staking_global_index(&config.nyluna_staking)?);
             }
             if !psi_stakers_rewards.is_zero() {
-                resp = resp.add_submessage(transfer(
-                    &config.prism_token,
-                    &config.psi_staking,
-                    psi_stakers_rewards,
-                )?);
+                resp = resp
+                    .add_submessage(transfer(
+                        &config.prism_token,
+                        &config.psi_staking,
+                        psi_stakers_rewards,
+                    )?)
+                    .add_submessage(update_staking_global_index(&config.psi_staking)?);
             }
 
             Ok(resp

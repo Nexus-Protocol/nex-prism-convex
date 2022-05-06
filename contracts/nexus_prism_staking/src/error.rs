@@ -19,9 +19,6 @@ pub enum ContractError {
     #[error("invalid config")]
     InvalidConfig {},
 
-    #[error("no stakers")]
-    NoStakers {},
-
     #[error("no rewards")]
     NoRewards {},
 
