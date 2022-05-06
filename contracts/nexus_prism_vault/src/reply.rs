@@ -402,7 +402,7 @@ pub fn reply(deps: DepsMut, env: Env, msg: Reply) -> Result<Response, ContractEr
             if !nyluna_stakers_rewards.is_zero() {
                 resp = resp.add_submessage(transfer(
                     &config.prism_token,
-                    &config.nexprism_staking,
+                    &config.nyluna_staking,
                     nyluna_stakers_rewards,
                 )?);
             }
