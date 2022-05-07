@@ -142,14 +142,7 @@ pub fn query_potential_rewards(
     let all_real_reward_with_decimals = sum(real_reward_with_decimals, staker.real_pending_rewards);
     let real_rewards = all_real_reward_with_decimals * Uint128::new(1);
 
-    let virtual_global_index = load_state(deps.storage)?.virtual_rewards.global_index;
-    let virtual_reward_with_decimals =
-        calculate_decimal_rewards(virtual_global_index, staker.virtual_index, staker.balance)?;
-    let all_virtual_reward_with_decimals =
-        sum(virtual_reward_with_decimals, staker.virtual_pending_rewards);
-    let virtual_rewards = all_virtual_reward_with_decimals * Uint128::new(1);
-
     Ok(PotentialRewardsResponse {
-        rewards: virtual_rewards + real_rewards,
+        rewards: real_rewards,
     })
 }

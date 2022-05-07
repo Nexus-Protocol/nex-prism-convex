@@ -112,14 +112,14 @@ pub fn query_potential_rewards(
 fn query_staking_potential_rewards(
     deps: Deps,
     staking_addr: &Addr,
-    potential_rewards: Uint128,
+    potential_rewards_total: Uint128,
     address: &Addr,
 ) -> StdResult<Uint128> {
     let response: nexus_prism_protocol::staking::PotentialRewardsResponse =
         deps.querier.query_wasm_smart(
             staking_addr,
             &nexus_prism_protocol::staking::QueryMsg::GetPotentialRewards {
-                potential_rewards,
+                potential_rewards_total,
                 address: address.into(),
             },
         )?;
