@@ -71,6 +71,6 @@ fn proper_initialization() {
         .query_wasm_smart(&staking_instance, &QueryMsg::State {})
         .unwrap();
 
-    assert_eq!(Uint128::zero(), resp.staking_total_balance)
-    assert_eq!(Uint128::zero(), resp.virtual_reward_balance)
+    assert_eq!(Uint128::zero(), resp.staking_total_balance);
+    assert_eq!(Uint128::zero(), resp.virtual_reward_balance);
 }
