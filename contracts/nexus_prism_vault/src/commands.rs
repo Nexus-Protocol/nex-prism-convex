@@ -128,6 +128,18 @@ pub fn update_config_by_governance(
     Ok(Response::new().add_attribute("action", "update_config"))
 }
 
+pub fn claim_all_rewards(
+    _deps: DepsMut,
+    env: Env,
+    _info: MessageInfo,
+) -> Result<Response, ContractError> {
+    Ok(Response::new()
+        .add_submessage(register_virtual_rewards_from_prism(&env)?)
+        .add_submessage(claim_virtual_rewards_from_prism(&env)?)
+        .add_submessage(claim_real_rewards_from_prism(&env)?)
+        .add_attribute("action", "claim_all_rewards"))
+}
+
 pub fn register_virtual_rewards(
     deps: DepsMut,
     env: Env,
@@ -281,7 +293,9 @@ pub fn update_staking_global_index(staking: &Addr) -> StdResult<SubMsg> {
 fn register_virtual_rewards_from_prism(env: &Env) -> StdResult<SubMsg> {
     Ok(SubMsg::new(WasmMsg::Execute {
         contract_addr: env.contract.address.to_string(),
-        msg: to_binary(&nexus_prism_protocol::vault::ExecuteMsg::RegisterVirtualRewards {})?,
+        msg: to_binary(&nexus_prism_protocol::vault::ExecuteMsg::Myself {
+            msg: nexus_prism_protocol::vault::MyselfMsg::RegisterVirtualRewards {},
+        })?,
         funds: vec![],
     }))
 }
@@ -289,7 +303,9 @@ fn register_virtual_rewards_from_prism(env: &Env) -> StdResult<SubMsg> {
 fn claim_virtual_rewards_from_prism(env: &Env) -> StdResult<SubMsg> {
     Ok(SubMsg::new(WasmMsg::Execute {
         contract_addr: env.contract.address.to_string(),
-        msg: to_binary(&nexus_prism_protocol::vault::ExecuteMsg::ClaimVirtualRewards {})?,
+        msg: to_binary(&nexus_prism_protocol::vault::ExecuteMsg::Myself {
+            msg: nexus_prism_protocol::vault::MyselfMsg::ClaimVirtualRewards {},
+        })?,
         funds: vec![],
     }))
 }
@@ -297,7 +313,9 @@ fn claim_virtual_rewards_from_prism(env: &Env) -> StdResult<SubMsg> {
 fn claim_real_rewards_from_prism(env: &Env) -> StdResult<SubMsg> {
     Ok(SubMsg::new(WasmMsg::Execute {
         contract_addr: env.contract.address.to_string(),
-        msg: to_binary(&nexus_prism_protocol::vault::ExecuteMsg::ClaimRealRewards {})?,
+        msg: to_binary(&nexus_prism_protocol::vault::ExecuteMsg::Myself {
+            msg: nexus_prism_protocol::vault::MyselfMsg::ClaimRealRewards {},
+        })?,
         funds: vec![],
     }))
 }
