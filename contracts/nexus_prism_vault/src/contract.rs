@@ -1,7 +1,7 @@
 use crate::commands::{
     accept_governance, claim_real_rewards, claim_virtual_rewards, deposit_xprism, deposit_yluna,
-    update_config_by_governance, update_config_by_owner, update_governance,
-    update_rewards_distribution_by_owner, update_state, withdraw_yluna,
+    register_virtual_rewards, update_config_by_governance, update_config_by_owner,
+    update_governance, update_rewards_distribution_by_owner, update_state, withdraw_yluna,
 };
 use crate::queries::{query_config, query_state, simulate_update_rewards_distribution};
 use crate::replies_id::ReplyId;
@@ -126,6 +126,7 @@ pub fn execute(
     match msg {
         ExecuteMsg::Receive(msg) => receive_cw20(deps, env, info, msg),
 
+        ExecuteMsg::RegisterVirtualRewards {} => register_virtual_rewards(deps, env, info),
         ExecuteMsg::ClaimVirtualRewards {} => claim_virtual_rewards(deps, env, info),
         ExecuteMsg::ClaimRealRewards {} => claim_real_rewards(deps, env, info),
 

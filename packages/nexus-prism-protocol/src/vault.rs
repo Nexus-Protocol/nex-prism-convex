@@ -47,6 +47,7 @@ pub enum ExecuteMsg {
     Receive(Cw20ReceiveMsg),
     ClaimRealRewards {},
     ClaimVirtualRewards {},
+    RegisterVirtualRewards {},
     Owner { msg: OwnerMsg },
     Governance { msg: GovernanceMsg },
     AcceptGovernance {},
