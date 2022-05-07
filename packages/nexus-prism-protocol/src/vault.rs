@@ -45,8 +45,8 @@ pub struct InstantiateMsg {
 #[serde(rename_all = "snake_case")]
 pub enum ExecuteMsg {
     Receive(Cw20ReceiveMsg),
-    ClaimRealRewards {},
-    ClaimVirtualRewards {},
+    ClaimAllRewards {},
+    Myself { msg: MyselfMsg },
     Owner { msg: OwnerMsg },
     Governance { msg: GovernanceMsg },
     AcceptGovernance {},
@@ -55,8 +55,18 @@ pub enum ExecuteMsg {
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum Cw20HookMsg {
+    // You have to deposit at least 1 yLUNA before depositing any xPRISM.
+    // yLUNA is required for boost activating.
     Deposit {},
     Withdraw {},
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum MyselfMsg {
+    RegisterVirtualRewards {},
+    ClaimVirtualRewards {},
+    ClaimRealRewards {},
 }
 
 #[allow(clippy::large_enum_variant)]

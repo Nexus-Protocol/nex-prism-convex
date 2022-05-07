@@ -8,7 +8,7 @@ use crate::error::ContractError;
 const CONFIG: Item<Config> = Item::new("config");
 pub const INST_CONFIG: Item<InstantiationConfig> = Item::new("inst_config");
 const STATE: Item<State> = Item::new("state");
-pub const REPLY_CONTEXT: Item<ReplyContext> = Item::new("reply");
+pub const PRISM_VESTING_STATE: Item<PrismVestingState> = Item::new("prism_vesting");
 pub const GOVERNANCE_UPDATE: Item<GovernanceUpdateState> = Item::new("gov_update");
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
@@ -117,7 +117,23 @@ pub struct GovernanceUpdateState {
     pub wait_approve_until: u64,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-pub struct ReplyContext {
-    pub vested_prism_balance: Uint128,
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Default)]
+pub struct PrismVestingSchedule {
+    pub end_time: u64,
+    pub amount: Uint128,
+}
+
+impl From<(u64, Uint128)> for PrismVestingSchedule {
+    fn from(value: (u64, Uint128)) -> Self {
+        Self {
+            end_time: value.0,
+            amount: value.1,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Default)]
+pub struct PrismVestingState {
+    pub balance_total: Uint128,
+    pub schedules: Vec<PrismVestingSchedule>,
 }

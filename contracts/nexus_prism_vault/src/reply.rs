@@ -1,21 +1,24 @@
 use std::convert::TryFrom;
 
-use cosmwasm_std::{entry_point, Deps};
+use cosmwasm_std::{entry_point, Uint128};
 use cosmwasm_std::{
-    to_binary, Addr, CosmosMsg, DepsMut, Env, Reply, Response, StdError, StdResult, SubMsg,
-    Uint128, WasmMsg,
+    to_binary, Addr, CosmosMsg, DepsMut, Env, Reply, Response, StdError, StdResult, SubMsg, WasmMsg,
 };
 use nexus_prism_protocol::common::{query_token_balance, transfer};
-use prism_protocol::launch_pool::VestingStatusResponse;
 use protobuf::Message;
 
+use crate::commands::{
+    calc_stakers_rewards, distribute_virtual_rewards, prism_vesting_schedules,
+    update_staking_global_index, vested_prism_balance,
+};
+use crate::state::PrismVestingState;
 use crate::{
     error::ContractError,
     replies_id::ReplyId,
     reply_response::MsgInstantiateContractResponse,
     state::{
-        load_config, load_state, save_config, Config, InstantiationConfig, ReplyContext, State,
-        INST_CONFIG, REPLY_CONTEXT,
+        load_config, load_state, save_config, Config, InstantiationConfig, INST_CONFIG,
+        PRISM_VESTING_STATE,
     },
 };
 
@@ -219,54 +222,6 @@ fn instantiate_nexprism_xprism_pair(
     ))
 }
 
-fn transfer_virtual_rewards(staking: &Addr, amount: Uint128) -> StdResult<SubMsg> {
-    Ok(SubMsg::new(WasmMsg::Execute {
-        contract_addr: staking.to_string(),
-        msg: to_binary(&nexus_prism_protocol::staking::ExecuteMsg::RewardOperator {
-            msg: nexus_prism_protocol::staking::RewardOperatorMsg::Reward { amount },
-        })?,
-        funds: vec![],
-    }))
-}
-
-fn update_staking_global_index(staking: &Addr) -> StdResult<SubMsg> {
-    Ok(SubMsg::new(WasmMsg::Execute {
-        contract_addr: staking.to_string(),
-        msg: to_binary(&nexus_prism_protocol::staking::ExecuteMsg::Anyone {
-            anyone_msg: nexus_prism_protocol::staking::AnyoneMsg::UpdateGlobalIndex {},
-        })?,
-        funds: vec![],
-    }))
-}
-
-fn calc_stakers_rewards(state: &State, total_rewards: Uint128) -> (Uint128, Uint128, Uint128) {
-    let nexprism_stakers_rewards = total_rewards * state.nexprism_stakers_reward_ratio;
-    let nyluna_stakers_rewards = total_rewards * state.nyluna_stakers_reward_ratio;
-    let psi_stakers_rewards = total_rewards - nexprism_stakers_rewards - nyluna_stakers_rewards;
-
-    (
-        nexprism_stakers_rewards,
-        nyluna_stakers_rewards,
-        psi_stakers_rewards,
-    )
-}
-
-fn vested_prism_balance(deps: Deps, env: &Env, prism_launch_pool: &Addr) -> StdResult<Uint128> {
-    let vesting_status: VestingStatusResponse = deps.querier.query_wasm_smart(
-        prism_launch_pool,
-        &prism_protocol::launch_pool::QueryMsg::VestingStatus {
-            staker_addr: env.contract.address.to_string(),
-        },
-    )?;
-
-    let mut balance_total = Uint128::zero();
-    for (_, balance) in vesting_status.scheduled_vests {
-        balance_total += balance;
-    }
-
-    Ok(balance_total)
-}
-
 #[entry_point]
 pub fn reply(deps: DepsMut, env: Env, msg: Reply) -> Result<Response, ContractError> {
     let mut inst_config = INST_CONFIG.load(deps.storage)?;
@@ -346,13 +301,14 @@ pub fn reply(deps: DepsMut, env: Env, msg: Reply) -> Result<Response, ContractEr
             .add_attribute("nyluna_autocompounder", get_addr(msg)?)),
 
         ReplyId::XPrismBoostActivated => {
-            let vested_prism_balance =
-                vested_prism_balance(deps.as_ref(), &env, &config.prism_launch_pool)?;
+            let prism_vesting_schedules =
+                prism_vesting_schedules(deps.as_ref(), &env, &config.prism_launch_pool)?;
+            let vested_prism_balance = vested_prism_balance(&prism_vesting_schedules);
 
-            let reply_ctx = ReplyContext {
-                vested_prism_balance,
-            };
-            REPLY_CONTEXT.save(deps.storage, &reply_ctx)?;
+            PRISM_VESTING_STATE.update(deps.storage, |mut state| -> StdResult<_> {
+                state.balance_total = vested_prism_balance;
+                Ok(state)
+            })?;
 
             Ok(Response::new()
                 .add_attribute("action", "xprism_boost_activated")
@@ -360,45 +316,23 @@ pub fn reply(deps: DepsMut, env: Env, msg: Reply) -> Result<Response, ContractEr
         }
 
         ReplyId::VirtualRewardsClaimed => {
-            let reply_ctx = REPLY_CONTEXT.load(deps.storage)?;
-            let vested_prism_balance =
-                vested_prism_balance(deps.as_ref(), &env, &config.prism_launch_pool)?;
-            let claimed_rewards = vested_prism_balance - reply_ctx.vested_prism_balance;
-            let (nexprism_stakers_rewards, nyluna_stakers_rewards, psi_stakers_rewards) =
-                calc_stakers_rewards(&state, claimed_rewards);
+            let mut resp = Response::new().add_attribute("action", "virtual_rewards_claimed");
 
-            let mut resp = Response::new();
-            if !nexprism_stakers_rewards.is_zero() {
-                resp = resp
-                    .add_submessage(transfer_virtual_rewards(
-                        &config.nexprism_staking,
-                        nexprism_stakers_rewards,
-                    )?)
-                    .add_submessage(update_staking_global_index(&config.nexprism_staking)?);
-            }
-            if !nyluna_stakers_rewards.is_zero() {
-                resp = resp
-                    .add_submessage(transfer_virtual_rewards(
-                        &config.nyluna_staking,
-                        nyluna_stakers_rewards,
-                    )?)
-                    .add_submessage(update_staking_global_index(&config.nyluna_staking)?);
-            }
-            if !psi_stakers_rewards.is_zero() {
-                resp = resp
-                    .add_submessage(transfer_virtual_rewards(
-                        &config.psi_staking,
-                        psi_stakers_rewards,
-                    )?)
-                    .add_submessage(update_staking_global_index(&config.psi_staking)?);
-            }
+            let prism_vesting_state = PRISM_VESTING_STATE.load(deps.storage)?;
+            let prism_vesting_schedules =
+                prism_vesting_schedules(deps.as_ref(), &env, &config.prism_launch_pool)?;
+            let vested_prism_balance = vested_prism_balance(&prism_vesting_schedules);
+            let claimed_rewards = vested_prism_balance - prism_vesting_state.balance_total;
+            resp = distribute_virtual_rewards(&config, &state, claimed_rewards, resp)?;
+            PRISM_VESTING_STATE.save(
+                deps.storage,
+                &PrismVestingState {
+                    balance_total: Uint128::zero(),
+                    schedules: prism_vesting_schedules,
+                },
+            )?;
 
-            Ok(resp
-                .add_attribute("action", "virtual_rewards_claimed")
-                .add_attribute("claimed_rewards", claimed_rewards)
-                .add_attribute("nexprism_stakers_rewards", nexprism_stakers_rewards)
-                .add_attribute("nyluna_stakers_rewards", nyluna_stakers_rewards)
-                .add_attribute("psi_stakers_rewards", psi_stakers_rewards))
+            Ok(resp)
         }
 
         ReplyId::RealRewardsClaimed => {

@@ -1,7 +1,8 @@
 use crate::commands::{
-    accept_governance, claim_real_rewards, claim_virtual_rewards, deposit_xprism, deposit_yluna,
-    update_config_by_governance, update_config_by_owner, update_governance,
-    update_rewards_distribution_by_owner, update_state, withdraw_yluna,
+    accept_governance, claim_all_rewards, claim_real_rewards, claim_virtual_rewards,
+    deposit_xprism, deposit_yluna, register_virtual_rewards, update_config_by_governance,
+    update_config_by_owner, update_governance, update_rewards_distribution_by_owner, update_state,
+    withdraw_yluna,
 };
 use crate::queries::{query_config, query_state, simulate_update_rewards_distribution};
 use crate::replies_id::ReplyId;
@@ -15,7 +16,8 @@ use cw2::{get_contract_version, set_contract_version};
 use cw20::Cw20ReceiveMsg;
 use nexus_prism_protocol::common::instantiate_token;
 use nexus_prism_protocol::vault::{
-    Cw20HookMsg, ExecuteMsg, GovernanceMsg, InstantiateMsg, MigrateMsg, OwnerMsg, QueryMsg,
+    Cw20HookMsg, ExecuteMsg, GovernanceMsg, InstantiateMsg, MigrateMsg, MyselfMsg, OwnerMsg,
+    QueryMsg,
 };
 
 use crate::error::ContractError;
@@ -126,8 +128,18 @@ pub fn execute(
     match msg {
         ExecuteMsg::Receive(msg) => receive_cw20(deps, env, info, msg),
 
-        ExecuteMsg::ClaimVirtualRewards {} => claim_virtual_rewards(deps, env, info),
-        ExecuteMsg::ClaimRealRewards {} => claim_real_rewards(deps, env, info),
+        ExecuteMsg::ClaimAllRewards {} => claim_all_rewards(deps, env, info),
+
+        ExecuteMsg::Myself { msg } => {
+            if info.sender != env.contract.address {
+                return Err(ContractError::Unauthorized {});
+            }
+            match msg {
+                MyselfMsg::RegisterVirtualRewards {} => register_virtual_rewards(deps, env, info),
+                MyselfMsg::ClaimVirtualRewards {} => claim_virtual_rewards(deps, env, info),
+                MyselfMsg::ClaimRealRewards {} => claim_real_rewards(deps, env, info),
+            }
+        }
 
         ExecuteMsg::Owner { msg } => {
             let config = load_config(deps.storage)?;
