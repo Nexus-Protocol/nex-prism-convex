@@ -19,10 +19,7 @@ use crate::{
         save_gov_update, save_state, Config, GovernanceUpdateState, ReplyContext, RewardState,
         Staker, State, REPLY_CONTEXT,
     },
-    utils::{
-        substract_and_update, substract_into_decimal,
-        sum_decimals_and_split_result_to_uint_and_decimal,
-    },
+    utils::{substract_into_decimal, sum_decimals_and_split_result_to_uint_and_decimal},
 };
 use crate::{state::save_staker, utils::calculate_decimal_rewards};
 use cw20::Cw20ReceiveMsg;
@@ -263,17 +260,18 @@ fn claim_rewards_logic(
         return Err(ContractError::NoRewards {});
     }
 
-    substract_and_update(&mut state.real_rewards.prev_balance, &rewards);
-    substract_and_update(&mut state.virtual_rewards.prev_balance, &rewards);
+    state.real_rewards.prev_balance -= rewards;
+    state.virtual_rewards.prev_balance -= rewards;
     state.virtual_reward_balance -= rewards;
     save_state(deps.storage, &state)?;
 
     staker.real_pending_rewards = substract_into_decimal(real_rewards, rewards) + real_decimals;
-    staker.real_index = state.real_rewards.global_index;
     staker.virtual_pending_rewards =
         substract_into_decimal(virtual_rewards, rewards) + virtual_decimals;
 
+    staker.real_index = state.real_rewards.global_index;
     staker.virtual_index = state.virtual_rewards.global_index;
+
     save_staker(deps.storage, staker_addr, &staker)?;
 
     let resp = Response::new()
