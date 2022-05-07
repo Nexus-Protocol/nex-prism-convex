@@ -185,6 +185,15 @@ pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
         QueryMsg::State {} => to_binary(&queries::query_state(deps)?),
         QueryMsg::Rewards { address } => to_binary(&queries::query_rewards(deps, address)?),
         QueryMsg::Staker { address } => to_binary(&queries::query_staker(deps, env, address)?),
+        QueryMsg::GetPotentialRewards {
+            potential_rewards_total,
+            address,
+        } => to_binary(&queries::query_potential_rewards(
+            deps,
+            env,
+            potential_rewards_total,
+            address,
+        )?),
     }
 }
 

@@ -239,7 +239,7 @@ fn update_staking_global_index(staking: &Addr) -> StdResult<SubMsg> {
     }))
 }
 
-fn calc_stakers_rewards(state: &State, total_rewards: Uint128) -> (Uint128, Uint128, Uint128) {
+pub fn calc_stakers_rewards(state: &State, total_rewards: Uint128) -> (Uint128, Uint128, Uint128) {
     let nexprism_stakers_rewards = total_rewards * state.nexprism_stakers_reward_ratio;
     let nyluna_stakers_rewards = total_rewards * state.nyluna_stakers_reward_ratio;
     let psi_stakers_rewards = total_rewards - nexprism_stakers_rewards - nyluna_stakers_rewards;
@@ -251,7 +251,7 @@ fn calc_stakers_rewards(state: &State, total_rewards: Uint128) -> (Uint128, Uint
     )
 }
 
-fn vested_prism_balance(deps: Deps, env: &Env, prism_launch_pool: &Addr) -> StdResult<Uint128> {
+pub fn vested_prism_balance(deps: Deps, env: &Env, prism_launch_pool: &Addr) -> StdResult<Uint128> {
     let vesting_status: VestingStatusResponse = deps.querier.query_wasm_smart(
         prism_launch_pool,
         &prism_protocol::launch_pool::QueryMsg::VestingStatus {

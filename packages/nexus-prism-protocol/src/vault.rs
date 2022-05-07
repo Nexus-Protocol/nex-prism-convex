@@ -123,6 +123,18 @@ pub enum QueryMsg {
     Config {},
     State {},
     SimulateUpdateRewardsDistribution {},
+    GetPotentialRewards {
+        staking_contract: StakingContract,
+        user_addr: String,
+    },
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum StakingContract {
+    Psi {},
+    NyLuna {},
+    NexPrism {},
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
@@ -170,6 +182,11 @@ pub struct UpdateRewardsDistributionResponse {
     pub nexprism_stakers_reward_ratio: Decimal,
     pub nyluna_stakers_reward_ratio: Decimal,
     pub psi_stakers_reward_ratio: Decimal,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+pub struct PotentialRewardsResponse {
+    pub rewards: Uint128,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
