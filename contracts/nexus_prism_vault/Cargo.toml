@@ -29,6 +29,7 @@ cw0 = "0.9.1"
 cw2 = "0.9.1"
 cw20 = "0.9.1"
 cw20-base = {version = "0.9.1", features = ["library"]}
+integer-sqrt = "0.1.5"
 nexus-prism-protocol = {path = "../../packages/nexus-prism-protocol"}
 num_enum = "0.5.7"
 prism-protocol = {git = "https://github.com/prism-finance/prism-contracts"}

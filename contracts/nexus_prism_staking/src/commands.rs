@@ -91,8 +91,10 @@ pub fn update_config(
 pub fn update_global_index(deps: DepsMut, env: Env) -> Result<Response, ContractError> {
     let mut state = load_state(deps.storage)?;
 
+    let resp = Response::new().add_attribute("action", "update_global_index");
+
     if state.staking_total_balance.is_zero() {
-        return Err(ContractError::NoStakers {});
+        return Ok(resp);
     }
 
     let config = load_config(deps.storage)?;
@@ -109,13 +111,12 @@ pub fn update_global_index(deps: DepsMut, env: Env) -> Result<Response, Contract
     )?;
 
     if virtual_claimed_rewards.is_zero() && real_claimed_rewards.is_zero() {
-        return Err(ContractError::NoRewards {});
+        return Ok(resp);
     }
 
     save_state(deps.storage, &state)?;
 
-    Ok(Response::new()
-        .add_attribute("action", "update_global_index")
+    Ok(resp
         .add_attribute("real_claimed_rewards", real_claimed_rewards)
         .add_attribute("virtual_claimed_rewards", virtual_claimed_rewards))
 }
@@ -290,7 +291,7 @@ fn claim_rewards_logic(
         (None, None, None) => {
             Ok(resp.add_submessage(transfer(&config.reward_token, recipient, rewards)?))
         }
-        (Some(prism_gov), Some(_), None) => Ok(resp.add_submessage(prism_xprism_swap(
+        (Some(prism_gov), None, None) => Ok(resp.add_submessage(prism_xprism_swap(
             &config.reward_token,
             &prism_gov,
             rewards,
