@@ -1,4 +1,5 @@
 use std::cmp::min;
+use std::{println as info, println as warn};
 
 use cosmwasm_std::{
     from_binary, Addr, BlockInfo, Decimal, Deps, DepsMut, Env, MessageInfo, Response, StdError,
@@ -210,12 +211,15 @@ pub fn claim_rewards_for_someone(
     claim_rewards_logic(deps, env, &addr, &addr)
 }
 
-fn claim_rewards_logic(
+// STEVENDEBUG
+pub fn claim_rewards_logic(
     deps: DepsMut,
     env: Env,
     staker_addr: &Addr,
     recipient: &Addr,
 ) -> Result<Response, ContractError> {
+    info!("STEVENDEBUG hello");
+
     let mut staker: Staker = load_staker(deps.storage, staker_addr)?;
     let mut state: State = load_state(deps.storage)?;
     let config: Config = load_config(deps.storage)?;
@@ -258,15 +262,19 @@ fn claim_rewards_logic(
     let virtual_rewards: Uint128 = all_virtual_reward_with_decimals * Uint128::new(1);
 
     let rewards = min(real_rewards, virtual_rewards);
-    if rewards.is_zero() {
-        return Err(ContractError::NoRewards {});
-    }
+    // if rewards.is_zero() {
+    //     return Err(ContractError::NoRewards {});
+    // }
+
+    info!("STEVENDEBUG hello 2");
 
     let new_real_balance = state.real_rewards.prev_balance - rewards;
     state.real_rewards.prev_balance = new_real_balance;
     let new_virtual_balance = state.virtual_rewards.prev_balance - rewards;
     state.virtual_rewards.prev_balance = new_virtual_balance;
     save_state(deps.storage, &state)?;
+
+    info!("STEVENDEBUG hello 3");
 
     staker.real_pending_rewards =
         staker.real_pending_rewards - Decimal::from_ratio(rewards, Uint128::new(1)) + real_decimals;
@@ -276,6 +284,8 @@ fn claim_rewards_logic(
         + virtual_decimals;
     staker.virtual_index = state.virtual_rewards.global_index;
     save_staker(deps.storage, staker_addr, &staker)?;
+
+    info!("STEVENDEBUG hello 4");
 
     let resp = Response::new()
         .add_attribute("action", "claim_reward")
@@ -289,15 +299,20 @@ fn claim_rewards_logic(
         config.nexprism_xprism_pair,
     ) {
         (None, None, None) => {
+            info!("STEVENDEBUG none");
             Ok(resp.add_submessage(transfer(&config.reward_token, recipient, rewards)?))
         }
-        (Some(prism_gov), None, None) => Ok(resp.add_submessage(prism_xprism_swap(
-            &config.reward_token,
-            &prism_gov,
-            rewards,
-            recipient,
-        )?)),
+        (Some(prism_gov), None, None) => {
+            info!("STEVENDEBUG just gov");
+            Ok(resp.add_submessage(prism_xprism_swap(
+                &config.reward_token,
+                &prism_gov,
+                rewards,
+                recipient,
+            )?))
+        },
         (Some(prism_gov), Some(_), Some(_)) => {
+            info!("STEVENDEBUG some all");
             REPLY_CONTEXT.save(
                 deps.storage,
                 &ReplyContext {
@@ -310,7 +325,10 @@ fn claim_rewards_logic(
                 rewards,
             )?))
         }
-        _ => Err(ContractError::InvalidConfig {}),
+        _ => {
+            info!("STEVENDEBUG err");
+            Err(ContractError::InvalidConfig {})
+        },
     }
 }
 
@@ -491,20 +509,22 @@ pub fn get_staker_balance(
     })
 }
 
+// STEVENDEBUG: what integration tests uses
 pub fn prism_xprism_swap(
     prism_token: &Addr,
     prism_gov: &Addr,
     amount: Uint128,
     recipient: &Addr,
 ) -> StdResult<SubMsg> {
-    send(
-        prism_token,
-        prism_gov,
-        amount,
-        &prism_protocol::gov::Cw20HookMsg::MintXprism {
-            receiver: Some(recipient.to_string()),
-        },
-    )
+    info!("STEVENDEBUG starting prism_xprism_swap");
+    // send(
+    //     prism_token,
+    //     prism_gov,
+    //     amount,
+    //     &prism_protocol::gov::Cw20HookMsg::MintXprism {
+    //         receiver: Some(recipient.to_string()),
+    //     },
+    // )
 }
 
 pub fn prism_xprism_swap_and_reply(

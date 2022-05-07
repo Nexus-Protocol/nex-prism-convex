@@ -526,6 +526,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ad5c14e80759d0939d013e6ca49930e59fc53dd8e5009132f76240c179380c09"
 
 [[package]]
+name = "log"
+version = "0.4.17"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "abb12e687cfb44aa40f41fc3978ef76448f9b6038cad6aef4259d3c095a2382e"
+dependencies = [
+ "cfg-if",
+]
+
+[[package]]
 name = "nexus-prism-autocompounder"
 version = "0.1.0"
 dependencies = [
@@ -575,6 +584,7 @@ dependencies = [
  "cw0 0.9.1",
  "cw2",
  "cw20 0.9.1",
+ "log",
  "nexus-prism-protocol",
  "num_enum",
  "prism-protocol",

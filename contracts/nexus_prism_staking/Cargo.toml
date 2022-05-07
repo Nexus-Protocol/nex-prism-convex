@@ -21,6 +21,7 @@ backtraces = ["cosmwasm-std/backtraces"]
 integration_tests_build = ["nexus-prism-protocol/integration_tests_build"]
 
 [dependencies]
+log = "0.4"
 astroport = "1.0.1"
 cosmwasm-bignumber = "2.2.0"
 cosmwasm-std = "0.16.7"
