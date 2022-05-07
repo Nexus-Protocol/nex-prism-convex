@@ -1,4 +1,4 @@
-use cosmwasm_std::Addr;
+use cosmwasm_std::{Addr, Uint128};
 use cosmwasm_std::testing::{mock_env, MockApi, MockQuerier, MockStorage};
 use terra_multi_test::{App, BankKeeper, ContractWrapper, Executor, TerraMockQuerier};
 use nexus_prism_staking::contract::{execute, instantiate, query};
@@ -9,6 +9,7 @@ use nexus_prism_protocol::{
         RewardOperatorMsg, StakeOperatorMsg,
     },
 };
+use nexus_prism_protocol::staking::StateResponse;
 
 fn mock_app() -> App {
     let api = MockApi::default();
@@ -62,5 +63,14 @@ fn init_contracts(app: &mut App) -> Addr {
 #[test]
 fn proper_initialization() {
     let mut app = mock_app();
-    let (staking_instance) = init_contracts(&mut app);
+    let staking_instance = init_contracts(&mut app);
+
+    // check state
+    let resp: StateResponse = app
+        .wrap()
+        .query_wasm_smart(&staking_instance, &QueryMsg::State {})
+        .unwrap();
+
+    assert_eq!(Uint128::zero(), resp.staking_total_balance)
+    assert_eq!(Uint128::zero(), resp.virtual_reward_balance)
 }
