@@ -300,20 +300,33 @@ pub fn reply(deps: DepsMut, env: Env, msg: Reply) -> Result<Response, ContractEr
             .add_attribute("action", "nyluna_autocompounder_instantiated")
             .add_attribute("nyluna_autocompounder", get_addr(msg)?)),
 
-        ReplyId::XPrismBoostActivated => {
-            let prism_vesting_schedules =
-                prism_vesting_schedules(deps.as_ref(), &env, &config.prism_launch_pool)?;
-            let vested_prism_balance = vested_prism_balance(&prism_vesting_schedules);
+        ReplyId::XPrismBoostActivated => match msg.result {
+            cosmwasm_std::ContractResult::Err(err_msg) => {
+                if err_msg.to_lowercase().contains("nothing bonded") {
+                    Ok(Response::new().add_attribute("action", "xprism_boost_not_activated"))
+                } else {
+                    Err(StdError::generic_err(format!(
+                        "fail to activate xprism boost: {}",
+                        err_msg
+                    ))
+                    .into())
+                }
+            }
+            cosmwasm_std::ContractResult::Ok(_) => {
+                let prism_vesting_schedules =
+                    prism_vesting_schedules(deps.as_ref(), &env, &config.prism_launch_pool)?;
+                let vested_prism_balance = vested_prism_balance(&prism_vesting_schedules);
 
-            PRISM_VESTING_STATE.update(deps.storage, |mut state| -> StdResult<_> {
-                state.balance_total = vested_prism_balance;
-                Ok(state)
-            })?;
+                PRISM_VESTING_STATE.update(deps.storage, |mut state| -> StdResult<_> {
+                    state.balance_total = vested_prism_balance;
+                    Ok(state)
+                })?;
 
-            Ok(Response::new()
-                .add_attribute("action", "xprism_boost_activated")
-                .add_attribute("vested_prism_balance", vested_prism_balance))
-        }
+                Ok(Response::new()
+                    .add_attribute("action", "xprism_boost_activated")
+                    .add_attribute("vested_prism_balance", vested_prism_balance))
+            }
+        },
 
         ReplyId::VirtualRewardsClaimed => {
             let mut resp = Response::new().add_attribute("action", "virtual_rewards_claimed");
