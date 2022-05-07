@@ -266,14 +266,14 @@ fn claim_rewards_logic(
     state.real_rewards.prev_balance = new_real_balance;
     let new_virtual_balance = state.virtual_rewards.prev_balance - rewards;
     state.virtual_rewards.prev_balance = new_virtual_balance;
+    state.virtual_reward_balance -= rewards;
     save_state(deps.storage, &state)?;
 
     staker.real_pending_rewards =
-        staker.real_pending_rewards - Decimal::from_ratio(rewards, Uint128::new(1)) + real_decimals;
+        Decimal::from_ratio(real_rewards - rewards, Uint128::new(1)) + real_decimals;
     staker.real_index = state.real_rewards.global_index;
-    staker.virtual_pending_rewards = staker.virtual_pending_rewards
-        - Decimal::from_ratio(rewards, Uint128::new(1))
-        + virtual_decimals;
+    staker.virtual_pending_rewards =
+        Decimal::from_ratio(virtual_rewards - rewards, Uint128::new(1)) + virtual_decimals;
     staker.virtual_index = state.virtual_rewards.global_index;
     save_staker(deps.storage, staker_addr, &staker)?;
 
