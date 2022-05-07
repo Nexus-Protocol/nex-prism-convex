@@ -4,7 +4,9 @@ use crate::commands::{
     update_config_by_owner, update_governance, update_rewards_distribution_by_owner, update_state,
     withdraw_yluna,
 };
-use crate::queries::{query_config, query_state, simulate_update_rewards_distribution};
+use crate::queries::{
+    query_config, query_potential_rewards, query_state, simulate_update_rewards_distribution,
+};
 use crate::replies_id::ReplyId;
 use cosmwasm_std::{entry_point, Uint128};
 use cosmwasm_std::{
@@ -276,6 +278,15 @@ pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
         QueryMsg::SimulateUpdateRewardsDistribution {} => {
             to_binary(&simulate_update_rewards_distribution(deps, env)?)
         }
+        QueryMsg::GetPotentialRewards {
+            staking_contract,
+            user_addr,
+        } => to_binary(&query_potential_rewards(
+            deps,
+            env,
+            staking_contract,
+            user_addr,
+        )?),
     }
 }
 

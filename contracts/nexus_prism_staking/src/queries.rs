@@ -6,7 +6,9 @@ use crate::{
 use cosmwasm_std::{Decimal, Deps, Env, StdResult, Uint128};
 use nexus_prism_protocol::{
     common::{query_token_balance, sum},
-    staking::{ConfigResponse, RewardsResponse, StakerResponse, StateResponse},
+    staking::{
+        ConfigResponse, PotentialRewardsResponse, RewardsResponse, StakerResponse, StateResponse,
+    },
 };
 
 use crate::state::{load_config, load_staker, load_state, Config};
@@ -108,5 +110,39 @@ pub fn query_staker(deps: Deps, env: Env, address: String) -> StdResult<StakerRe
         balance: staker.balance,
         virtual_pending_rewards: staker.virtual_pending_rewards,
         real_pending_rewards: staker.real_pending_rewards,
+    })
+}
+
+pub fn query_potential_rewards(
+    deps: Deps,
+    _env: Env,
+    potential_rewards_total: Uint128,
+    address: String,
+) -> StdResult<PotentialRewardsResponse> {
+    let mut state = load_state(deps.storage)?;
+
+    if state.staking_total_balance.is_zero() {
+        return Ok(PotentialRewardsResponse {
+            rewards: Uint128::zero(),
+        });
+    }
+
+    calculate_global_index(
+        potential_rewards_total,
+        state.staking_total_balance,
+        &mut state.real_rewards,
+    )?;
+
+    let staker_addr = deps.api.addr_validate(&address)?;
+    let staker = load_staker(deps.storage, &staker_addr)?;
+
+    let real_global_index = state.real_rewards.global_index;
+    let real_reward_with_decimals =
+        calculate_decimal_rewards(real_global_index, staker.real_index, staker.balance)?;
+    let all_real_reward_with_decimals = sum(real_reward_with_decimals, staker.real_pending_rewards);
+    let real_rewards = all_real_reward_with_decimals * Uint128::new(1);
+
+    Ok(PotentialRewardsResponse {
+        rewards: real_rewards,
     })
 }

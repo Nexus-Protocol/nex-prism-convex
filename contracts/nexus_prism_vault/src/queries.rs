@@ -1,10 +1,12 @@
-use cosmwasm_std::{Deps, Env, StdResult};
+use cosmwasm_std::{Addr, Deps, Env, StdResult, Uint128};
 use nexus_prism_protocol::vault::{
-    ConfigResponse, StateResponse, UpdateRewardsDistributionResponse,
+    ConfigResponse, PotentialRewardsResponse, StakingContract, StateResponse,
+    UpdateRewardsDistributionResponse,
 };
 
 use crate::{
     commands::update_rewards_distribution,
+    reply::{calc_stakers_rewards, vested_prism_balance},
     state::{load_config, load_state},
 };
 
@@ -67,4 +69,59 @@ pub fn simulate_update_rewards_distribution(
         nyluna_stakers_reward_ratio: new_state.nyluna_stakers_reward_ratio,
         psi_stakers_reward_ratio: new_state.psi_stakers_reward_ratio,
     })
+}
+
+pub fn query_potential_rewards(
+    deps: Deps,
+    env: Env,
+    staking_contract: StakingContract,
+    user_addr: String,
+) -> StdResult<PotentialRewardsResponse> {
+    let config = load_config(deps.storage)?;
+    let state = load_state(deps.storage)?;
+    let user_addr = deps.api.addr_validate(&user_addr)?;
+
+    let vested_prism_balance = vested_prism_balance(deps, &env, &config.prism_launch_pool)?;
+    let (nexprism_stakers_rewards, nyluna_stakers_rewards, psi_stakers_rewards) =
+        calc_stakers_rewards(&state, vested_prism_balance);
+
+    let rewards = match staking_contract {
+        StakingContract::NexPrism {} => query_staking_potential_rewards(
+            deps,
+            &config.nexprism_staking,
+            nexprism_stakers_rewards,
+            &user_addr,
+        )?,
+        StakingContract::NyLuna {} => query_staking_potential_rewards(
+            deps,
+            &config.nyluna_staking,
+            nyluna_stakers_rewards,
+            &user_addr,
+        )?,
+        StakingContract::Psi {} => query_staking_potential_rewards(
+            deps,
+            &config.psi_staking,
+            psi_stakers_rewards,
+            &user_addr,
+        )?,
+    };
+
+    Ok(PotentialRewardsResponse { rewards })
+}
+
+fn query_staking_potential_rewards(
+    deps: Deps,
+    staking_addr: &Addr,
+    potential_rewards_total: Uint128,
+    address: &Addr,
+) -> StdResult<Uint128> {
+    let response: nexus_prism_protocol::staking::PotentialRewardsResponse =
+        deps.querier.query_wasm_smart(
+            staking_addr,
+            &nexus_prism_protocol::staking::QueryMsg::GetPotentialRewards {
+                potential_rewards_total,
+                address: address.into(),
+            },
+        )?;
+    Ok(response.rewards)
 }

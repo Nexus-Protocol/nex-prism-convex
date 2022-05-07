@@ -74,8 +74,16 @@ pub enum StakeOperatorMsg {
 pub enum QueryMsg {
     Config {},
     State {},
-    Rewards { address: String },
-    Staker { address: String },
+    Rewards {
+        address: String,
+    },
+    Staker {
+        address: String,
+    },
+    GetPotentialRewards {
+        potential_rewards_total: Uint128,
+        address: String,
+    },
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
@@ -108,6 +116,11 @@ pub struct StakerResponse {
     pub balance: Uint128,
     pub virtual_pending_rewards: Decimal,
     pub real_pending_rewards: Decimal,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+pub struct PotentialRewardsResponse {
+    pub rewards: Uint128,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
