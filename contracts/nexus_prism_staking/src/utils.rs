@@ -26,8 +26,8 @@ pub fn get_decimals(value: Decimal) -> StdResult<Decimal> {
     }
 }
 
-pub fn decimal_minus_uint128(decimal: Decimal, uint128: Uint128) -> Decimal {
-    decimal - Decimal::from_ratio(uint128, Uint128::new(1))
+pub fn substract_into_decimal(v1: Uint128, v2: Uint128) -> Decimal {
+    Decimal::from_ratio(v1 - v2, Uint128::new(1))
 }
 
 pub fn sum_decimals_and_split_result_to_uint_and_decimal(

@@ -20,7 +20,7 @@ use crate::{
         Staker, State, REPLY_CONTEXT,
     },
     utils::{
-        decimal_minus_uint128, substract_and_update,
+        substract_and_update, substract_into_decimal,
         sum_decimals_and_split_result_to_uint_and_decimal,
     },
 };
@@ -265,13 +265,13 @@ fn claim_rewards_logic(
 
     substract_and_update(&mut state.real_rewards.prev_balance, &rewards);
     substract_and_update(&mut state.virtual_rewards.prev_balance, &rewards);
+    state.virtual_reward_balance -= rewards;
     save_state(deps.storage, &state)?;
 
-    staker.real_pending_rewards =
-        decimal_minus_uint128(staker.real_pending_rewards, rewards) + real_decimals;
+    staker.real_pending_rewards = substract_into_decimal(real_rewards, rewards) + real_decimals;
     staker.real_index = state.real_rewards.global_index;
     staker.virtual_pending_rewards =
-        decimal_minus_uint128(staker.virtual_pending_rewards, rewards) + virtual_decimals;
+        substract_into_decimal(virtual_rewards, rewards) + virtual_decimals;
 
     staker.virtual_index = state.virtual_rewards.global_index;
     save_staker(deps.storage, staker_addr, &staker)?;
