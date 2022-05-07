@@ -40,8 +40,15 @@ pub fn sum_decimals_and_split_result_to_uint_and_decimal(
     Ok((uint128, decimals))
 }
 
+pub fn substract_and_update(field: &mut Uint128, to_sub: &Uint128) {
+    let result = *field - *to_sub;
+    *field = result;
+}
+
 #[cfg(test)]
 mod tests {
+    use crate::state::{RewardState, State};
+
     use super::*;
 
     #[test]
@@ -63,5 +70,31 @@ mod tests {
         )
         .unwrap();
         assert_eq!(reward.to_string(), "0.9999999");
+    }
+
+    #[test]
+    pub fn sub_and_update_1() {
+        let _1000 = Uint128::from(1_000u128);
+        let _2500 = Uint128::from(2_500u128);
+        let rewards = _1000;
+
+        let mut state = State {
+            staking_total_balance: Uint128::zero(),
+            virtual_reward_balance: Uint128::zero(),
+            virtual_rewards: RewardState {
+                global_index: Decimal::zero(),
+                prev_balance: _2500,
+            },
+            real_rewards: RewardState {
+                global_index: Decimal::zero(),
+                prev_balance: _2500,
+            },
+        };
+
+        substract_and_update(&mut state.real_rewards.prev_balance, &rewards);
+        substract_and_update(&mut state.virtual_rewards.prev_balance, &rewards);
+        //2500 - 1000 = 1500
+        assert_eq!(state.real_rewards.prev_balance, _2500 - _1000);
+        assert_eq!(state.virtual_rewards.prev_balance, _2500 - _1000);
     }
 }
