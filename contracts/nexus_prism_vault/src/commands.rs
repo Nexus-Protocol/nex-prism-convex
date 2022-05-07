@@ -17,8 +17,8 @@ use crate::{
     error::ContractError,
     replies_id::ReplyId,
     state::{
-        load_config, load_state, save_config, save_state, Config, GovernanceUpdateState, State,
-        GOVERNANCE_UPDATE,
+        load_config, load_state, save_config, save_state, Config, GovernanceUpdateState,
+        PrismVestingSchedule, PrismVestingState, State, GOVERNANCE_UPDATE, PRISM_VESTING_STATE,
     },
 };
 
@@ -128,10 +128,184 @@ pub fn update_config_by_governance(
     Ok(Response::new().add_attribute("action", "update_config"))
 }
 
+pub fn claim_all_rewards(
+    _deps: DepsMut,
+    env: Env,
+    _info: MessageInfo,
+) -> Result<Response, ContractError> {
+    Ok(Response::new()
+        .add_submessage(register_virtual_rewards_from_prism(&env)?)
+        .add_submessage(claim_virtual_rewards_from_prism(&env)?)
+        .add_submessage(claim_real_rewards_from_prism(&env)?)
+        .add_attribute("action", "claim_all_rewards"))
+}
+
+pub fn register_virtual_rewards(
+    deps: DepsMut,
+    env: Env,
+    _info: MessageInfo,
+) -> Result<Response, ContractError> {
+    let config = load_config(deps.storage)?;
+    let state = load_state(deps.storage)?;
+
+    let mut resp = Response::new().add_attribute("action", "register_virtual_rewards");
+
+    let prev_schedules = PRISM_VESTING_STATE
+        .may_load(deps.storage)?
+        .unwrap_or_default()
+        .schedules;
+    let cur_schedules = prism_vesting_schedules(deps.as_ref(), &env, &config.prism_launch_pool)?;
+
+    let unregistered_virtual_rewards =
+        find_unregistered_rewards(cur_schedules.clone(), prev_schedules);
+    resp = distribute_virtual_rewards(&config, &state, unregistered_virtual_rewards, resp)?;
+
+    PRISM_VESTING_STATE.save(
+        deps.storage,
+        &PrismVestingState {
+            balance_total: Uint128::zero(),
+            schedules: cur_schedules,
+        },
+    )?;
+
+    Ok(resp)
+}
+
+fn find_unregistered_rewards(
+    cur_schedules: Vec<PrismVestingSchedule>,
+    prev_schedules: Vec<PrismVestingSchedule>,
+) -> Uint128 {
+    if cur_schedules.is_empty() {
+        return Uint128::zero();
+    }
+    let iter = prev_schedules
+        .into_iter()
+        .skip_while(|sch| sch.end_time < cur_schedules[0].end_time);
+
+    let prev_balance = vested_prism_balance(&iter.collect::<Vec<_>>());
+    let cur_balance = vested_prism_balance(&cur_schedules);
+    if cur_balance <= prev_balance {
+        return Uint128::zero();
+    }
+
+    cur_balance - prev_balance
+}
+
+pub fn prism_vesting_schedules(
+    deps: Deps,
+    env: &Env,
+    prism_launch_pool: &Addr,
+) -> StdResult<Vec<PrismVestingSchedule>> {
+    let vesting_status: VestingStatusResponse = deps.querier.query_wasm_smart(
+        prism_launch_pool,
+        &prism_protocol::launch_pool::QueryMsg::VestingStatus {
+            staker_addr: env.contract.address.to_string(),
+        },
+    )?;
+    Ok(vesting_status
+        .scheduled_vests
+        .into_iter()
+        .map(|(end_time, amount)| PrismVestingSchedule { end_time, amount })
+        .collect())
+}
+
+pub fn vested_prism_balance(schedules: &[PrismVestingSchedule]) -> Uint128 {
+    let mut balance_total = Uint128::zero();
+    for schedule in schedules {
+        balance_total += schedule.amount;
+    }
+    balance_total
+}
+
+pub fn distribute_virtual_rewards(
+    config: &Config,
+    state: &State,
+    amount: Uint128,
+    mut resp: Response,
+) -> StdResult<Response> {
+    let (nexprism_stakers_rewards, nyluna_stakers_rewards, psi_stakers_rewards) =
+        calc_stakers_rewards(state, amount);
+
+    if !nexprism_stakers_rewards.is_zero() {
+        resp = resp
+            .add_submessage(transfer_virtual_rewards(
+                &config.nexprism_staking,
+                nexprism_stakers_rewards,
+            )?)
+            .add_submessage(update_staking_global_index(&config.nexprism_staking)?);
+    }
+    if !nyluna_stakers_rewards.is_zero() {
+        resp = resp
+            .add_submessage(transfer_virtual_rewards(
+                &config.nyluna_staking,
+                nyluna_stakers_rewards,
+            )?)
+            .add_submessage(update_staking_global_index(&config.nyluna_staking)?);
+    }
+    if !psi_stakers_rewards.is_zero() {
+        resp = resp
+            .add_submessage(transfer_virtual_rewards(
+                &config.psi_staking,
+                psi_stakers_rewards,
+            )?)
+            .add_submessage(update_staking_global_index(&config.psi_staking)?);
+    }
+
+    Ok(resp
+        .add_attribute("virtual_rewards_amount", amount)
+        .add_attribute("nexprism_stakers_rewards", nexprism_stakers_rewards)
+        .add_attribute("nyluna_stakers_rewards", nyluna_stakers_rewards)
+        .add_attribute("psi_stakers_rewards", psi_stakers_rewards))
+}
+
+pub fn calc_stakers_rewards(state: &State, total_rewards: Uint128) -> (Uint128, Uint128, Uint128) {
+    let nexprism_stakers_rewards = total_rewards * state.nexprism_stakers_reward_ratio;
+    let nyluna_stakers_rewards = total_rewards * state.nyluna_stakers_reward_ratio;
+    let psi_stakers_rewards = total_rewards - nexprism_stakers_rewards - nyluna_stakers_rewards;
+
+    (
+        nexprism_stakers_rewards,
+        nyluna_stakers_rewards,
+        psi_stakers_rewards,
+    )
+}
+
+fn transfer_virtual_rewards(staking: &Addr, amount: Uint128) -> StdResult<SubMsg> {
+    Ok(SubMsg::new(WasmMsg::Execute {
+        contract_addr: staking.to_string(),
+        msg: to_binary(&nexus_prism_protocol::staking::ExecuteMsg::RewardOperator {
+            msg: nexus_prism_protocol::staking::RewardOperatorMsg::Reward { amount },
+        })?,
+        funds: vec![],
+    }))
+}
+
+pub fn update_staking_global_index(staking: &Addr) -> StdResult<SubMsg> {
+    Ok(SubMsg::new(WasmMsg::Execute {
+        contract_addr: staking.to_string(),
+        msg: to_binary(&nexus_prism_protocol::staking::ExecuteMsg::Anyone {
+            anyone_msg: nexus_prism_protocol::staking::AnyoneMsg::UpdateGlobalIndex {},
+        })?,
+        funds: vec![],
+    }))
+}
+
+fn register_virtual_rewards_from_prism(env: &Env) -> StdResult<SubMsg> {
+    Ok(SubMsg::new(WasmMsg::Execute {
+        contract_addr: env.contract.address.to_string(),
+        msg: to_binary(&nexus_prism_protocol::vault::ExecuteMsg::Myself {
+            msg: nexus_prism_protocol::vault::MyselfMsg::RegisterVirtualRewards {},
+        })?,
+        funds: vec![],
+    }))
+}
+
 fn claim_virtual_rewards_from_prism(env: &Env) -> StdResult<SubMsg> {
     Ok(SubMsg::new(WasmMsg::Execute {
         contract_addr: env.contract.address.to_string(),
-        msg: to_binary(&nexus_prism_protocol::vault::ExecuteMsg::ClaimVirtualRewards {})?,
+        msg: to_binary(&nexus_prism_protocol::vault::ExecuteMsg::Myself {
+            msg: nexus_prism_protocol::vault::MyselfMsg::ClaimVirtualRewards {},
+        })?,
         funds: vec![],
     }))
 }
@@ -139,7 +313,9 @@ fn claim_virtual_rewards_from_prism(env: &Env) -> StdResult<SubMsg> {
 fn claim_real_rewards_from_prism(env: &Env) -> StdResult<SubMsg> {
     Ok(SubMsg::new(WasmMsg::Execute {
         contract_addr: env.contract.address.to_string(),
-        msg: to_binary(&nexus_prism_protocol::vault::ExecuteMsg::ClaimRealRewards {})?,
+        msg: to_binary(&nexus_prism_protocol::vault::ExecuteMsg::Myself {
+            msg: nexus_prism_protocol::vault::MyselfMsg::ClaimRealRewards {},
+        })?,
         funds: vec![],
     }))
 }
@@ -165,6 +341,7 @@ pub fn deposit_xprism(
     save_state(deps.storage, &config, &state)?;
 
     Ok(Response::new()
+        .add_submessage(register_virtual_rewards_from_prism(&env)?)
         .add_submessage(mint(
             &config.nexprism_token,
             &Addr::unchecked(sender),
@@ -207,6 +384,7 @@ pub fn deposit_yluna(
     save_state(deps.storage, &config, &state)?;
 
     Ok(Response::new()
+        .add_submessage(register_virtual_rewards_from_prism(&env)?)
         .add_submessage(mint(
             &config.nyluna_token,
             &Addr::unchecked(sender),
@@ -249,6 +427,7 @@ pub fn withdraw_yluna(
     save_state(deps.storage, &config, &state)?;
 
     Ok(Response::new()
+        .add_submessage(register_virtual_rewards_from_prism(&env)?)
         .add_submessage(withdraw_from_launch_pool(
             &config.prism_launch_pool,
             amount,
@@ -537,40 +716,6 @@ fn calculate_inner(
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use std::str::FromStr;
-
-    use cosmwasm_bignumber::{Decimal256, Uint256};
-
-    use super::calculate_inner;
-
-    #[test]
-    fn calculation_fails_when_no_more_bonds_available() {
-        let base_ratio = Decimal256::from_str("0.8").unwrap();
-        let xprism = Uint256::from_str("2749769917500000").unwrap();
-        let yluna_total = Uint256::from_str("5000000000").unwrap();
-        let yluna = Uint256::from_str("5000000000").unwrap();
-        let weight_total = Uint256::from_str("31179386419").unwrap();
-        let weight = Uint256::from_str("31179386419").unwrap();
-        let ampl = Uint256::from_str("194430827499").unwrap();
-        let yluna_price = Decimal256::one();
-        let xprism_price = Decimal256::one();
-
-        calculate_inner(
-            base_ratio,
-            xprism,
-            yluna_total,
-            yluna,
-            weight_total,
-            weight,
-            ampl,
-            yluna_price,
-            xprism_price,
-        );
-    }
-}
-
 pub fn accept_governance(
     deps: DepsMut,
     env: Env,
@@ -612,4 +757,123 @@ pub fn update_governance(
     };
     GOVERNANCE_UPDATE.save(deps.storage, &gov_update)?;
     Ok(Response::new())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::str::FromStr;
+
+    use cosmwasm_bignumber::{Decimal256, Uint256};
+    use cosmwasm_std::Uint128;
+
+    use crate::commands::{calculate_inner, find_unregistered_rewards};
+
+    #[test]
+    fn calculation_fails_when_no_more_bonds_available() {
+        let base_ratio = Decimal256::from_str("0.8").unwrap();
+        let xprism = Uint256::from_str("2749769917500000").unwrap();
+        let yluna_total = Uint256::from_str("5000000000").unwrap();
+        let yluna = Uint256::from_str("5000000000").unwrap();
+        let weight_total = Uint256::from_str("31179386419").unwrap();
+        let weight = Uint256::from_str("31179386419").unwrap();
+        let ampl = Uint256::from_str("194430827499").unwrap();
+        let yluna_price = Decimal256::one();
+        let xprism_price = Decimal256::one();
+
+        calculate_inner(
+            base_ratio,
+            xprism,
+            yluna_total,
+            yluna,
+            weight_total,
+            weight,
+            ampl,
+            yluna_price,
+            xprism_price,
+        );
+    }
+
+    #[test]
+    fn all_schedules_are_empty() {
+        let rewards = find_unregistered_rewards(vec![], vec![]);
+        assert_eq!(rewards, Uint128::zero());
+    }
+
+    #[test]
+    fn cur_schedules_are_empty() {
+        let prev = vec![(1, Uint128::new(10)).into()];
+        let rewards = find_unregistered_rewards(vec![], prev);
+        assert_eq!(rewards, Uint128::zero());
+    }
+
+    #[test]
+    fn prev_schedules_are_empty() {
+        let cur = vec![(1, Uint128::new(10)).into(), (2, Uint128::new(20)).into()];
+        let rewards = find_unregistered_rewards(cur, vec![]);
+        assert_eq!(rewards, Uint128::new(30));
+    }
+
+    #[test]
+    fn all_cur_schedules_are_more_recent() {
+        let prev = vec![
+            (1, Uint128::new(10)).into(),
+            (2, Uint128::new(20)).into(),
+            (3, Uint128::new(30)).into(),
+        ];
+        let cur = vec![
+            (4, Uint128::new(40)).into(),
+            (5, Uint128::new(50)).into(),
+            (6, Uint128::new(60)).into(),
+        ];
+        let rewards = find_unregistered_rewards(cur, prev);
+        assert_eq!(rewards, Uint128::new(150));
+    }
+
+    #[test]
+    fn cur_schedules_are_more_recent() {
+        let prev = vec![
+            (1, Uint128::new(10)).into(),
+            (2, Uint128::new(20)).into(),
+            (3, Uint128::new(30)).into(),
+        ];
+        let cur = vec![
+            (3, Uint128::new(40)).into(),
+            (4, Uint128::new(50)).into(),
+            (5, Uint128::new(60)).into(),
+        ];
+        let rewards = find_unregistered_rewards(cur, prev);
+        assert_eq!(rewards, Uint128::new(120));
+    }
+
+    #[test]
+    fn schedules_are_same_time() {
+        let prev = vec![
+            (1, Uint128::new(10)).into(),
+            (2, Uint128::new(20)).into(),
+            (3, Uint128::new(30)).into(),
+        ];
+        let cur = vec![
+            (1, Uint128::new(40)).into(),
+            (2, Uint128::new(50)).into(),
+            (3, Uint128::new(60)).into(),
+        ];
+        let rewards = find_unregistered_rewards(cur, prev);
+        assert_eq!(rewards, Uint128::new(90));
+    }
+
+    #[test]
+    fn schedules_are_same() {
+        let prev = vec![
+            (1, Uint128::new(10)).into(),
+            (2, Uint128::new(20)).into(),
+            (3, Uint128::new(30)).into(),
+        ];
+        let cur = vec![
+            (1, Uint128::new(10)).into(),
+            (2, Uint128::new(20)).into(),
+            (3, Uint128::new(30)).into(),
+        ];
+        let rewards = find_unregistered_rewards(cur, prev);
+        assert_eq!(rewards, Uint128::zero());
+    }
 }
