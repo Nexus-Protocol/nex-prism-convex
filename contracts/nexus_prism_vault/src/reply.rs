@@ -303,7 +303,7 @@ pub fn reply(deps: DepsMut, env: Env, msg: Reply) -> Result<Response, ContractEr
         ReplyId::XPrismBoostActivated => match msg.result {
             cosmwasm_std::ContractResult::Err(err_msg) => {
                 if err_msg.to_lowercase().contains("nothing bonded") {
-                    Ok(Response::new().add_attribute("action", "xprism_boost_not_activated"))
+                    Ok(xprism_boost_activated_logic(deps, &env, &config)?)
                 } else {
                     Err(StdError::generic_err(format!(
                         "fail to activate xprism boost: {}",
@@ -313,18 +313,7 @@ pub fn reply(deps: DepsMut, env: Env, msg: Reply) -> Result<Response, ContractEr
                 }
             }
             cosmwasm_std::ContractResult::Ok(_) => {
-                let prism_vesting_schedules =
-                    prism_vesting_schedules(deps.as_ref(), &env, &config.prism_launch_pool)?;
-                let vested_prism_balance = vested_prism_balance(&prism_vesting_schedules);
-
-                PRISM_VESTING_STATE.update(deps.storage, |mut state| -> StdResult<_> {
-                    state.balance_total = vested_prism_balance;
-                    Ok(state)
-                })?;
-
-                Ok(Response::new()
-                    .add_attribute("action", "xprism_boost_activated")
-                    .add_attribute("vested_prism_balance", vested_prism_balance))
+                Ok(xprism_boost_activated_logic(deps, &env, &config)?)
             }
         },
 
@@ -390,4 +379,19 @@ pub fn reply(deps: DepsMut, env: Env, msg: Reply) -> Result<Response, ContractEr
                 .add_attribute("psi_stakers_rewards", psi_stakers_rewards))
         }
     }
+}
+
+fn xprism_boost_activated_logic(deps: DepsMut, env: &Env, config: &Config) -> StdResult<Response> {
+    let prism_vesting_schedules =
+        prism_vesting_schedules(deps.as_ref(), env, &config.prism_launch_pool)?;
+    let vested_prism_balance = vested_prism_balance(&prism_vesting_schedules);
+
+    PRISM_VESTING_STATE.update(deps.storage, |mut state| -> StdResult<_> {
+        state.balance_total = vested_prism_balance;
+        Ok(state)
+    })?;
+
+    Ok(Response::new()
+        .add_attribute("action", "xprism_boost_activated")
+        .add_attribute("vested_prism_balance", vested_prism_balance))
 }
