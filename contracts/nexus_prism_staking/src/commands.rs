@@ -212,7 +212,7 @@ pub fn claim_rewards_for_someone(
 
 fn claim_rewards_logic(
     deps: DepsMut,
-    env: Env,
+    _env: Env,
     staker_addr: &Addr,
     recipient: &Addr,
 ) -> Result<Response, ContractError> {
@@ -224,17 +224,6 @@ fn claim_rewards_logic(
         get_staking_total_balance(deps.as_ref(), config.stake_operator.clone(), &state)?;
     staker.balance =
         get_staker_balance(deps.as_ref(), config.stake_operator, &staker, staker_addr)?;
-
-    calculate_global_index(
-        state.virtual_reward_balance,
-        state.staking_total_balance,
-        &mut state.virtual_rewards,
-    )?;
-    calculate_global_index(
-        query_token_balance(deps.as_ref(), &config.reward_token, &env.contract.address),
-        state.staking_total_balance,
-        &mut state.real_rewards,
-    )?;
 
     let real_reward_with_decimals = calculate_decimal_rewards(
         state.real_rewards.global_index,
