@@ -466,7 +466,7 @@ pub fn claim_virtual_rewards(
 }
 
 fn activate_xprism_boost(launch_pool: &Addr) -> StdResult<SubMsg> {
-    Ok(SubMsg::reply_on_success(
+    Ok(SubMsg::reply_always(
         WasmMsg::Execute {
             contract_addr: launch_pool.to_string(),
             msg: to_binary(&prism_protocol::launch_pool::ExecuteMsg::ActivateBoost {})?,
