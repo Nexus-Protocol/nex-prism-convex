@@ -1,5 +1,5 @@
 use cosmwasm_std::{Decimal, StdError, StdResult, Uint128};
-use nexus_prism_protocol::common::{mul, sub};
+use nexus_prism_protocol::common::{mul, sub, sum};
 use std::str::FromStr;
 
 // calculate the reward based on the user index and the global index.
@@ -24,6 +24,20 @@ pub fn get_decimals(value: Decimal) -> StdResult<Decimal> {
         }
         _ => Err(StdError::generic_err("Unexpected number of dots")),
     }
+}
+
+pub fn decimal_minus_uint128(decimal: Decimal, uint128: Uint128) -> Decimal {
+    decimal - Decimal::from_ratio(uint128, Uint128::new(1))
+}
+
+pub fn sum_decimals_and_split_result_to_uint_and_decimal(
+    d1: Decimal,
+    d2: Decimal,
+) -> StdResult<(Uint128, Decimal)> {
+    let sum = sum(d1, d2);
+    let decimals: Decimal = get_decimals(sum)?;
+    let uint128: Uint128 = sum * Uint128::new(1);
+    Ok((uint128, decimals))
 }
 
 #[cfg(test)]
