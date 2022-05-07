@@ -19,11 +19,9 @@ use crate::{
         save_gov_update, save_state, Config, GovernanceUpdateState, ReplyContext, RewardState,
         Staker, State, REPLY_CONTEXT,
     },
+    utils::{substract_into_decimal, sum_decimals_and_split_result_to_uint_and_decimal},
 };
-use crate::{
-    state::save_staker,
-    utils::{calculate_decimal_rewards, get_decimals},
-};
+use crate::{state::save_staker, utils::calculate_decimal_rewards};
 use cw20::Cw20ReceiveMsg;
 
 pub fn receive_cw20(
@@ -247,34 +245,33 @@ fn claim_rewards_logic(
         staker.balance,
     )?;
 
-    let all_real_reward_with_decimals: Decimal =
-        sum(real_reward_with_decimals, staker.real_pending_rewards);
-    let real_decimals: Decimal = get_decimals(all_real_reward_with_decimals)?;
-    let real_rewards: Uint128 = all_real_reward_with_decimals * Uint128::new(1);
+    let (real_rewards, real_decimals) = sum_decimals_and_split_result_to_uint_and_decimal(
+        real_reward_with_decimals,
+        staker.real_pending_rewards,
+    )?;
 
-    let all_virtual_reward_with_decimals: Decimal =
-        sum(virtual_reward_with_decimals, staker.virtual_pending_rewards);
-    let virtual_decimals: Decimal = get_decimals(all_virtual_reward_with_decimals)?;
-    let virtual_rewards: Uint128 = all_virtual_reward_with_decimals * Uint128::new(1);
+    let (virtual_rewards, virtual_decimals) = sum_decimals_and_split_result_to_uint_and_decimal(
+        virtual_reward_with_decimals,
+        staker.virtual_pending_rewards,
+    )?;
 
     let rewards = min(real_rewards, virtual_rewards);
     if rewards.is_zero() {
         return Err(ContractError::NoRewards {});
     }
 
-    let new_real_balance = state.real_rewards.prev_balance - rewards;
-    state.real_rewards.prev_balance = new_real_balance;
-    let new_virtual_balance = state.virtual_rewards.prev_balance - rewards;
-    state.virtual_rewards.prev_balance = new_virtual_balance;
+    state.real_rewards.prev_balance -= rewards;
+    state.virtual_rewards.prev_balance -= rewards;
     state.virtual_reward_balance -= rewards;
     save_state(deps.storage, &state)?;
 
-    staker.real_pending_rewards =
-        Decimal::from_ratio(real_rewards - rewards, Uint128::new(1)) + real_decimals;
-    staker.real_index = state.real_rewards.global_index;
+    staker.real_pending_rewards = substract_into_decimal(real_rewards, rewards) + real_decimals;
     staker.virtual_pending_rewards =
-        Decimal::from_ratio(virtual_rewards - rewards, Uint128::new(1)) + virtual_decimals;
+        substract_into_decimal(virtual_rewards, rewards) + virtual_decimals;
+
+    staker.real_index = state.real_rewards.global_index;
     staker.virtual_index = state.virtual_rewards.global_index;
+
     save_staker(deps.storage, staker_addr, &staker)?;
 
     let resp = Response::new()
