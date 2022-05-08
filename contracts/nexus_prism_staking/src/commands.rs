@@ -32,7 +32,7 @@ pub fn receive_cw20(
 ) -> Result<Response, ContractError> {
     let config = load_config(deps.storage)?;
 
-    if config.stake_operator.is_some() || info.sender != config.staking_token {
+    if config.with_stake_operator() || info.sender != config.staking_token {
         return Err(ContractError::Unauthorized);
     }
 
@@ -52,7 +52,7 @@ pub fn unbond(
 ) -> Result<Response, ContractError> {
     let config = load_config(deps.storage)?;
 
-    if config.stake_operator.is_some() {
+    if config.with_stake_operator() {
         return Err(ContractError::Unauthorized);
     }
 
@@ -350,8 +350,11 @@ pub fn increase_balance(
     staker.virtual_index = state.virtual_rewards.global_index;
     staker.virtual_pending_rewards = sum(virtual_rewards, staker.virtual_pending_rewards);
 
-    staker.balance += amount;
-    state.staking_total_balance += amount;
+    //cause if so - we already have updated balance from StakeOperator
+    if !config.with_stake_operator() {
+        staker.balance += amount;
+        state.staking_total_balance += amount;
+    }
 
     calculate_global_index(
         state.virtual_reward_balance,
@@ -393,7 +396,7 @@ pub fn decrease_balance(
         &address,
     )?;
 
-    if staker.balance < amount {
+    if !config.with_stake_operator() && staker.balance < amount {
         return Err(ContractError::NotEnoughTokens {
             name: config.staking_token.to_string(),
             value: staker.balance,
@@ -428,8 +431,11 @@ pub fn decrease_balance(
     staker.virtual_index = state.virtual_rewards.global_index;
     staker.virtual_pending_rewards = sum(virtual_rewards, staker.virtual_pending_rewards);
 
-    staker.balance -= amount;
-    state.staking_total_balance -= amount;
+    //cause if so - we already have updated balance from StakeOperator
+    if !config.with_stake_operator() {
+        staker.balance -= amount;
+        state.staking_total_balance -= amount;
+    }
 
     save_staker(deps.storage, &address, &staker)?;
     save_state(deps.storage, &state)?;
