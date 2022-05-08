@@ -178,7 +178,7 @@ pub fn compound(deps: DepsMut, _env: Env, _info: MessageInfo) -> StdResult<Respo
 }
 
 fn claim_rewards(staking_contract: &Addr) -> StdResult<SubMsg> {
-    Ok(SubMsg::reply_on_success(
+    Ok(SubMsg::reply_always(
         CosmosMsg::Wasm(WasmMsg::Execute {
             contract_addr: staking_contract.to_string(),
             msg: to_binary(&nexus_prism_protocol::staking::ExecuteMsg::Anyone {
