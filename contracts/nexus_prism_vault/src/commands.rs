@@ -6,7 +6,7 @@ use cosmwasm_std::{
 use integer_sqrt::IntegerSquareRoot;
 use nexus_prism_protocol::{
     cfg_addr, cfg_var,
-    common::{div, get_price, get_time, mint, mul, send, transfer},
+    common::{burn, div, get_price, get_time, mint, mul, send, transfer},
 };
 use prism_protocol::{
     launch_pool::{DistributionStatusResponse, RewardInfoResponse, VestingStatusResponse},
@@ -428,6 +428,7 @@ pub fn withdraw_yluna(
 
     Ok(Response::new()
         .add_submessage(register_virtual_rewards_from_prism(&env)?)
+        .add_submessage(burn(&config.nyluna_token, amount)?)
         .add_submessage(withdraw_from_launch_pool(
             &config.prism_launch_pool,
             amount,
