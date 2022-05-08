@@ -21,6 +21,12 @@ pub struct Config {
     pub nexprism_xprism_pair: Option<Addr>,
 }
 
+impl Config {
+    pub fn with_stake_operator(&self) -> bool {
+        self.stake_operator.is_some()
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct State {
     pub staking_total_balance: Uint128,
