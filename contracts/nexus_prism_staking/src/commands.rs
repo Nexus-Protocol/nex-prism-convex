@@ -396,7 +396,7 @@ pub fn decrease_balance(
         &address,
     )?;
 
-    if staker.balance < amount {
+    if !config.with_stake_operator() && staker.balance < amount {
         return Err(ContractError::NotEnoughTokens {
             name: config.staking_token.to_string(),
             value: staker.balance,
