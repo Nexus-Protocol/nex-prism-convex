@@ -353,8 +353,8 @@ pub fn increase_balance(
     //cause if so - we already have updated balance from StakeOperator
     if !config.with_stake_operator() {
         staker.balance += amount;
+        state.staking_total_balance += amount;
     }
-    state.staking_total_balance += amount;
 
     calculate_global_index(
         state.virtual_reward_balance,
@@ -434,8 +434,8 @@ pub fn decrease_balance(
     //cause if so - we already have updated balance from StakeOperator
     if !config.with_stake_operator() {
         staker.balance -= amount;
+        state.staking_total_balance -= amount;
     }
-    state.staking_total_balance -= amount;
 
     save_staker(deps.storage, &address, &staker)?;
     save_state(deps.storage, &state)?;
