@@ -145,7 +145,7 @@ pub enum StakeOperatorQueryMsg {
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema)]
 pub struct StakeOperatorStateResponse {
-    pub total_deposit: Uint128,
+    pub total_share: Uint128,
 }
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema)]

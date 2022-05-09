@@ -469,7 +469,7 @@ pub fn get_staking_total_balance(
         let s: StakeOperatorStateResponse = deps
             .querier
             .query_wasm_smart(stake_operator, &StakeOperatorQueryMsg::State {})?;
-        s.total_deposit
+        s.total_share
     } else {
         state.staking_total_balance
     })
