@@ -252,10 +252,10 @@ pub fn distribute_virtual_rewards(
     }
 
     Ok(resp
-        .add_attribute("virtual_rewards_amount", amount)
-        .add_attribute("nexprism_stakers_rewards", nexprism_stakers_rewards)
-        .add_attribute("nyluna_stakers_rewards", nyluna_stakers_rewards)
-        .add_attribute("psi_stakers_rewards", psi_stakers_rewards))
+        .add_attribute("virtual_rewards_total", amount)
+        .add_attribute("nexprism_stakers_virtual_rewards", nexprism_stakers_rewards)
+        .add_attribute("nyluna_stakers_virtual_rewards", nyluna_stakers_rewards)
+        .add_attribute("psi_stakers_virtual_rewards", psi_stakers_rewards))
 }
 
 pub fn calc_stakers_rewards(state: &State, total_rewards: Uint128) -> (Uint128, Uint128, Uint128) {
@@ -490,28 +490,18 @@ fn withdraw_rewards(launch_pool: &Addr) -> StdResult<SubMsg> {
 
 pub fn claim_real_rewards(
     deps: DepsMut,
-    env: Env,
+    _env: Env,
     _info: MessageInfo,
 ) -> Result<Response, ContractError> {
     let res = Response::new().add_attribute("action", "claim_real_rewards");
 
     let config = load_config(deps.storage)?;
 
-    let vesting_status: VestingStatusResponse = deps.querier.query_wasm_smart(
-        &config.prism_launch_pool,
-        &prism_protocol::launch_pool::QueryMsg::VestingStatus {
-            staker_addr: env.contract.address.to_string(),
-        },
-    )?;
-    if vesting_status.withdrawable.is_zero() {
-        return Ok(res);
-    }
-
     Ok(res.add_submessage(claim_withdrawn_rewards(&config.prism_launch_pool)?))
 }
 
 fn claim_withdrawn_rewards(launch_pool: &Addr) -> StdResult<SubMsg> {
-    Ok(SubMsg::reply_on_success(
+    Ok(SubMsg::reply_always(
         WasmMsg::Execute {
             contract_addr: launch_pool.to_string(),
             msg: to_binary(

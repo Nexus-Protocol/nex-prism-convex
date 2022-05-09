@@ -11,7 +11,7 @@ use crate::commands::{
     calc_stakers_rewards, distribute_virtual_rewards, prism_vesting_schedules,
     update_staking_global_index, vested_prism_balance,
 };
-use crate::state::PrismVestingState;
+use crate::state::{PrismVestingState, State};
 use crate::{
     error::ContractError,
     replies_id::ReplyId,
@@ -337,47 +337,21 @@ pub fn reply(deps: DepsMut, env: Env, msg: Reply) -> Result<Response, ContractEr
             Ok(resp)
         }
 
-        ReplyId::RealRewardsClaimed => {
-            let claimed_rewards =
-                query_token_balance(deps.as_ref(), &config.prism_token, &env.contract.address);
-            let (nexprism_stakers_rewards, nyluna_stakers_rewards, psi_stakers_rewards) =
-                calc_stakers_rewards(&state, claimed_rewards);
-
-            let mut resp = Response::new();
-            if !nexprism_stakers_rewards.is_zero() {
-                resp = resp
-                    .add_submessage(transfer(
-                        &config.prism_token,
-                        &config.nexprism_staking,
-                        nexprism_stakers_rewards,
-                    )?)
-                    .add_submessage(update_staking_global_index(&config.nexprism_staking)?);
+        ReplyId::RealRewardsClaimed => match msg.result {
+            cosmwasm_std::ContractResult::Err(err_msg) => {
+                if err_msg.to_lowercase().contains("no claimable rewards") {
+                    Ok(real_rewards_claimed_logic(deps, &env, &config, &state)?)
+                } else {
+                    Err(
+                        StdError::generic_err(format!("fail to claim real rewards: {}", err_msg))
+                            .into(),
+                    )
+                }
             }
-            if !nyluna_stakers_rewards.is_zero() {
-                resp = resp
-                    .add_submessage(transfer(
-                        &config.prism_token,
-                        &config.nyluna_staking,
-                        nyluna_stakers_rewards,
-                    )?)
-                    .add_submessage(update_staking_global_index(&config.nyluna_staking)?);
+            cosmwasm_std::ContractResult::Ok(_) => {
+                Ok(real_rewards_claimed_logic(deps, &env, &config, &state)?)
             }
-            if !psi_stakers_rewards.is_zero() {
-                resp = resp
-                    .add_submessage(transfer(
-                        &config.prism_token,
-                        &config.psi_staking,
-                        psi_stakers_rewards,
-                    )?)
-                    .add_submessage(update_staking_global_index(&config.psi_staking)?);
-            }
-
-            Ok(resp
-                .add_attribute("action", "real_rewards_claimed")
-                .add_attribute("nexprism_stakers_rewards", nexprism_stakers_rewards)
-                .add_attribute("nyluna_stakers_rewards", nyluna_stakers_rewards)
-                .add_attribute("psi_stakers_rewards", psi_stakers_rewards))
-        }
+        },
     }
 }
 
@@ -394,4 +368,52 @@ fn xprism_boost_activated_logic(deps: DepsMut, env: &Env, config: &Config) -> St
     Ok(Response::new()
         .add_attribute("action", "xprism_boost_activated")
         .add_attribute("vested_prism_balance", vested_prism_balance))
+}
+
+fn real_rewards_claimed_logic(
+    deps: DepsMut,
+    env: &Env,
+    config: &Config,
+    state: &State,
+) -> StdResult<Response> {
+    let claimed_rewards =
+        query_token_balance(deps.as_ref(), &config.prism_token, &env.contract.address);
+    let (nexprism_stakers_rewards, nyluna_stakers_rewards, psi_stakers_rewards) =
+        calc_stakers_rewards(state, claimed_rewards);
+
+    let mut resp = Response::new();
+    if !nexprism_stakers_rewards.is_zero() {
+        resp = resp
+            .add_submessage(transfer(
+                &config.prism_token,
+                &config.nexprism_staking,
+                nexprism_stakers_rewards,
+            )?)
+            .add_submessage(update_staking_global_index(&config.nexprism_staking)?);
+    }
+    if !nyluna_stakers_rewards.is_zero() {
+        resp = resp
+            .add_submessage(transfer(
+                &config.prism_token,
+                &config.nyluna_staking,
+                nyluna_stakers_rewards,
+            )?)
+            .add_submessage(update_staking_global_index(&config.nyluna_staking)?);
+    }
+    if !psi_stakers_rewards.is_zero() {
+        resp = resp
+            .add_submessage(transfer(
+                &config.prism_token,
+                &config.psi_staking,
+                psi_stakers_rewards,
+            )?)
+            .add_submessage(update_staking_global_index(&config.psi_staking)?);
+    }
+
+    Ok(resp
+        .add_attribute("action", "real_rewards_claimed")
+        .add_attribute("real_rewards_total", claimed_rewards)
+        .add_attribute("nexprism_stakers_real_rewards", nexprism_stakers_rewards)
+        .add_attribute("nyluna_stakers_real_rewards", nyluna_stakers_rewards)
+        .add_attribute("psi_stakers_real_rewards", psi_stakers_rewards))
 }
