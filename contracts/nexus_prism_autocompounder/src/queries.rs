@@ -34,6 +34,12 @@ pub fn query_auto_compounding_token_value(
     let auto_compounding_token_supply: Uint256 =
         query_token_supply(deps, &config.auto_compounding_token)?.into();
 
+    if auto_compounding_token_supply.is_zero() {
+        return Ok(AutoCompoundingTokenValueResponse {
+            compounding_token_amount: Uint256::zero().into(),
+        });
+    }
+
     let compounding_token_amount: Uint256 = compounding_token_balance * Uint256::from(amount)
         / Decimal256::from_uint256(auto_compounding_token_supply);
 
@@ -54,6 +60,12 @@ pub fn query_compounding_token_value(
 
     let auto_compounding_token_supply: Uint256 =
         query_token_supply(deps, &config.auto_compounding_token)?.into();
+
+    if compounding_token_balance.is_zero() {
+        return Ok(CompoundingTokenValueResponse {
+            auto_compounding_token_amount: Uint256::zero().into(),
+        });
+    }
 
     let auto_compounding_token_amount: Uint256 = auto_compounding_token_supply
         * Uint256::from(amount)
