@@ -333,6 +333,12 @@ pub fn increase_balance(
         &address,
     )?;
 
+    //cause if so - we already have updated balance from StakeOperator
+    if config.with_stake_operator() {
+        staker.balance -= amount;
+        state.staking_total_balance -= amount;
+    }
+
     let real_rewards = calculate_decimal_rewards(
         state.real_rewards.global_index,
         staker.real_index,
@@ -351,11 +357,8 @@ pub fn increase_balance(
     staker.virtual_index = state.virtual_rewards.global_index;
     staker.virtual_pending_rewards = sum(virtual_rewards, staker.virtual_pending_rewards);
 
-    //cause if so - we already have updated balance from StakeOperator
-    if !config.with_stake_operator() {
-        staker.balance += amount;
-        state.staking_total_balance += amount;
-    }
+    staker.balance += amount;
+    state.staking_total_balance += amount;
 
     calculate_global_index(
         state.virtual_reward_balance,
@@ -397,6 +400,12 @@ pub fn decrease_balance(
         &address,
     )?;
 
+    //cause if so - we already have updated balance from StakeOperator
+    if config.with_stake_operator() {
+        staker.balance += amount;
+        state.staking_total_balance += amount;
+    }
+
     if !config.with_stake_operator() && staker.balance < amount {
         return Err(ContractError::NotEnoughTokens {
             name: config.staking_token.to_string(),
@@ -432,11 +441,8 @@ pub fn decrease_balance(
     staker.virtual_index = state.virtual_rewards.global_index;
     staker.virtual_pending_rewards = sum(virtual_rewards, staker.virtual_pending_rewards);
 
-    //cause if so - we already have updated balance from StakeOperator
-    if !config.with_stake_operator() {
-        staker.balance -= amount;
-        state.staking_total_balance -= amount;
-    }
+    staker.balance -= amount;
+    state.staking_total_balance -= amount;
 
     save_staker(deps.storage, &address, &staker)?;
     save_state(deps.storage, &state)?;
