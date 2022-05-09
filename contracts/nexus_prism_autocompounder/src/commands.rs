@@ -228,8 +228,10 @@ pub fn withdraw(deps: DepsMut, env: Env) -> StdResult<Response> {
         Ok(resp
             .add_message(CosmosMsg::Wasm(WasmMsg::Execute {
                 contract_addr: config.staking_contract.to_string(),
-                msg: to_binary(&nexus_prism_protocol::staking::AnyoneMsg::Unbond {
-                    amount: compounding_token_to_withdraw.into(),
+                msg: to_binary(&nexus_prism_protocol::staking::ExecuteMsg::Anyone {
+                    anyone_msg: nexus_prism_protocol::staking::AnyoneMsg::Unbond {
+                        amount: compounding_token_to_withdraw.into(),
+                    },
                 })?,
                 funds: vec![],
             }))
