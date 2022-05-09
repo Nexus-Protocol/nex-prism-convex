@@ -88,14 +88,15 @@ pub fn update_config(
 
 pub fn update_global_index(deps: DepsMut, env: Env) -> Result<Response, ContractError> {
     let mut state = load_state(deps.storage)?;
+    let config = load_config(deps.storage)?;
+    state.staking_total_balance =
+        get_staking_total_balance(deps.as_ref(), config.stake_operator.clone(), &state)?;
 
     let resp = Response::new().add_attribute("action", "update_global_index");
 
     if state.staking_total_balance.is_zero() {
         return Ok(resp);
     }
-
-    let config = load_config(deps.storage)?;
 
     let virtual_claimed_rewards = calculate_global_index(
         state.virtual_reward_balance,
