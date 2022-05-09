@@ -1,6 +1,6 @@
 use std::convert::TryFrom;
 
-use cosmwasm_std::{entry_point, Uint128};
+use cosmwasm_std::entry_point;
 use cosmwasm_std::{
     to_binary, Addr, CosmosMsg, DepsMut, Env, Reply, Response, StdError, StdResult, SubMsg, WasmMsg,
 };
@@ -8,18 +8,15 @@ use nexus_prism_protocol::common::{query_token_balance, transfer};
 use protobuf::Message;
 
 use crate::commands::{
-    calc_stakers_rewards, distribute_virtual_rewards, prism_vesting_schedules,
-    update_staking_global_index, vested_prism_balance,
+    calc_stakers_rewards, distribute_virtual_rewards, get_locked_vested_prism_amount,
+    prism_vesting_schedules, update_staking_global_index,
 };
-use crate::state::{PrismVestingState, State};
+use crate::state::{load_locked_vested_prism_amount, save_prism_vesting_schedules, State};
 use crate::{
     error::ContractError,
     replies_id::ReplyId,
     reply_response::MsgInstantiateContractResponse,
-    state::{
-        load_config, load_state, save_config, Config, InstantiationConfig, INST_CONFIG,
-        PRISM_VESTING_STATE,
-    },
+    state::{load_config, load_state, save_config, Config, InstantiationConfig, INST_CONFIG},
 };
 
 fn get_addr(msg: Reply) -> StdResult<Addr> {
@@ -317,26 +314,24 @@ pub fn reply(deps: DepsMut, env: Env, msg: Reply) -> Result<Response, ContractEr
             }
         },
 
+        // update_vest in Prism has been called just before it.
         ReplyId::VirtualRewardsClaimed => {
             let mut resp = Response::new().add_attribute("action", "virtual_rewards_claimed");
 
-            let prism_vesting_state = PRISM_VESTING_STATE.load(deps.storage)?;
+            let prev_locked_vested_prism_amount = load_locked_vested_prism_amount(deps.storage)?;
             let prism_vesting_schedules =
                 prism_vesting_schedules(deps.as_ref(), &env, &config.prism_launch_pool)?;
-            let vested_prism_balance = vested_prism_balance(&prism_vesting_schedules);
-            let claimed_rewards = vested_prism_balance - prism_vesting_state.balance_total;
+            let locked_vested_prism_amount =
+                get_locked_vested_prism_amount(env.block.time.seconds(), &prism_vesting_schedules);
+            let claimed_rewards = locked_vested_prism_amount - prev_locked_vested_prism_amount;
             resp = distribute_virtual_rewards(&config, &state, claimed_rewards, resp)?;
-            PRISM_VESTING_STATE.save(
-                deps.storage,
-                &PrismVestingState {
-                    balance_total: Uint128::zero(),
-                    schedules: prism_vesting_schedules,
-                },
-            )?;
+
+            save_prism_vesting_schedules(deps.storage, prism_vesting_schedules)?;
 
             Ok(resp)
         }
 
+        // update_vest in Prism has been called just before it.
         ReplyId::RealRewardsClaimed => match msg.result {
             cosmwasm_std::ContractResult::Err(err_msg) => {
                 if err_msg.to_lowercase().contains("no claimable rewards") {
@@ -355,19 +350,12 @@ pub fn reply(deps: DepsMut, env: Env, msg: Reply) -> Result<Response, ContractEr
     }
 }
 
-fn xprism_boost_activated_logic(deps: DepsMut, env: &Env, config: &Config) -> StdResult<Response> {
-    let prism_vesting_schedules =
-        prism_vesting_schedules(deps.as_ref(), env, &config.prism_launch_pool)?;
-    let vested_prism_balance = vested_prism_balance(&prism_vesting_schedules);
-
-    PRISM_VESTING_STATE.update(deps.storage, |mut state| -> StdResult<_> {
-        state.balance_total = vested_prism_balance;
-        Ok(state)
-    })?;
-
-    Ok(Response::new()
-        .add_attribute("action", "xprism_boost_activated")
-        .add_attribute("vested_prism_balance", vested_prism_balance))
+fn xprism_boost_activated_logic(
+    _deps: DepsMut,
+    _env: &Env,
+    _config: &Config,
+) -> StdResult<Response> {
+    Ok(Response::new().add_attribute("action", "xprism_boost_activated"))
 }
 
 fn real_rewards_claimed_logic(
@@ -376,6 +364,9 @@ fn real_rewards_claimed_logic(
     config: &Config,
     state: &State,
 ) -> StdResult<Response> {
+    // We don`t update PRISM_VESTING_STATE here, because real rewards claim
+    // happens just after virtual rewards claim only, where we do it.
+
     let claimed_rewards =
         query_token_balance(deps.as_ref(), &config.prism_token, &env.contract.address);
     let (nexprism_stakers_rewards, nyluna_stakers_rewards, psi_stakers_rewards) =

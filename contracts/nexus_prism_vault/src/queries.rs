@@ -7,7 +7,7 @@ use nexus_prism_protocol::vault::{
 use crate::{
     commands::{
         calc_stakers_rewards, prism_vesting_schedules, update_rewards_distribution,
-        vested_prism_balance,
+        vested_prism_amount_total,
     },
     state::{load_config, load_state},
 };
@@ -84,7 +84,7 @@ pub fn query_potential_rewards(
     let user_addr = deps.api.addr_validate(&user_addr)?;
 
     let schedules = prism_vesting_schedules(deps, &env, &config.prism_launch_pool)?;
-    let vested_prism_balance = vested_prism_balance(&schedules);
+    let vested_prism_balance = vested_prism_amount_total(&schedules);
     let (nexprism_stakers_rewards, nyluna_stakers_rewards, psi_stakers_rewards) =
         calc_stakers_rewards(&state, vested_prism_balance);
 
