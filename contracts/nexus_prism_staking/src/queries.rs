@@ -7,7 +7,8 @@ use cosmwasm_std::{Decimal, Deps, Env, StdResult, Uint128};
 use nexus_prism_protocol::{
     common::{query_token_balance, sum},
     staking::{
-        ConfigResponse, PotentialRewardsResponse, RewardsResponse, StakerResponse, StateResponse,
+        ConfigResponse, PotentialRewardsResponse, RewardStateResponse, RewardsResponse,
+        StakerResponse, StateResponse,
     },
 };
 
@@ -29,11 +30,22 @@ pub fn query_config(deps: Deps) -> StdResult<ConfigResponse> {
 }
 
 pub fn query_state(deps: Deps) -> StdResult<StateResponse> {
-    let state = load_state(deps.storage)?;
+    let config = load_config(deps.storage)?;
+    let mut state = load_state(deps.storage)?;
+    state.staking_total_balance =
+        get_staking_total_balance(deps, config.stake_operator.clone(), &state)?;
 
     Ok(StateResponse {
         staking_total_balance: state.staking_total_balance,
         virtual_reward_balance: state.virtual_reward_balance,
+        virtual_rewards: RewardStateResponse {
+            global_index: state.virtual_rewards.global_index,
+            prev_balance: state.virtual_rewards.prev_balance,
+        },
+        real_rewards: RewardStateResponse {
+            global_index: state.real_rewards.global_index,
+            prev_balance: state.real_rewards.prev_balance,
+        },
     })
 }
 
