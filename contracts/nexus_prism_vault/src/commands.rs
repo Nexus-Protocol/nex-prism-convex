@@ -17,8 +17,9 @@ use crate::{
     error::ContractError,
     replies_id::ReplyId,
     state::{
-        load_config, load_state, save_config, save_state, Config, GovernanceUpdateState,
-        PrismVestingSchedule, PrismVestingState, State, GOVERNANCE_UPDATE, PRISM_VESTING_STATE,
+        load_config, load_state, may_load_prism_vesting_schedules, save_config,
+        save_locked_vested_prism_amount, save_prism_vesting_schedules, save_state, Config,
+        GovernanceUpdateState, PrismVestingSchedule, State, GOVERNANCE_UPDATE,
     },
 };
 
@@ -150,23 +151,14 @@ pub fn register_virtual_rewards(
 
     let mut resp = Response::new().add_attribute("action", "register_virtual_rewards");
 
-    let prev_schedules = PRISM_VESTING_STATE
-        .may_load(deps.storage)?
-        .unwrap_or_default()
-        .schedules;
+    let prev_schedules = may_load_prism_vesting_schedules(deps.storage)?.unwrap_or_default();
     let cur_schedules = prism_vesting_schedules(deps.as_ref(), &env, &config.prism_launch_pool)?;
 
     let unregistered_virtual_rewards =
         find_unregistered_rewards(cur_schedules.clone(), prev_schedules);
     resp = distribute_virtual_rewards(&config, &state, unregistered_virtual_rewards, resp)?;
 
-    PRISM_VESTING_STATE.save(
-        deps.storage,
-        &PrismVestingState {
-            balance_total: Uint128::zero(),
-            schedules: cur_schedules,
-        },
-    )?;
+    save_prism_vesting_schedules(deps.storage, cur_schedules)?;
 
     Ok(resp)
 }
@@ -182,13 +174,13 @@ fn find_unregistered_rewards(
         .into_iter()
         .skip_while(|sch| sch.end_time < cur_schedules[0].end_time);
 
-    let prev_balance = vested_prism_balance(&iter.collect::<Vec<_>>());
-    let cur_balance = vested_prism_balance(&cur_schedules);
-    if cur_balance <= prev_balance {
+    let prev_amount = vested_prism_amount_total(&iter.collect::<Vec<_>>());
+    let cur_amount = vested_prism_amount_total(&cur_schedules);
+    if cur_amount <= prev_amount {
         return Uint128::zero();
     }
 
-    cur_balance - prev_balance
+    cur_amount - prev_amount
 }
 
 pub fn prism_vesting_schedules(
@@ -209,12 +201,25 @@ pub fn prism_vesting_schedules(
         .collect())
 }
 
-pub fn vested_prism_balance(schedules: &[PrismVestingSchedule]) -> Uint128 {
-    let mut balance_total = Uint128::zero();
+pub fn vested_prism_amount_total(schedules: &[PrismVestingSchedule]) -> Uint128 {
+    let mut total = Uint128::zero();
     for schedule in schedules {
-        balance_total += schedule.amount;
+        total += schedule.amount;
     }
-    balance_total
+    total
+}
+
+pub fn get_locked_vested_prism_amount(
+    cur_time: u64,
+    schedules: &[PrismVestingSchedule],
+) -> Uint128 {
+    let mut amount = Uint128::zero();
+    for schedule in schedules {
+        if cur_time < schedule.end_time {
+            amount += schedule.amount;
+        }
+    }
+    amount
 }
 
 pub fn distribute_virtual_rewards(
@@ -455,15 +460,23 @@ fn withdraw_from_launch_pool(launch_pool: &Addr, amount: Uint128) -> StdResult<S
 
 pub fn claim_virtual_rewards(
     deps: DepsMut,
-    _env: Env,
+    env: Env,
     _info: MessageInfo,
 ) -> Result<Response, ContractError> {
     let config = load_config(deps.storage)?;
 
+    let prism_vesting_schedules =
+        prism_vesting_schedules(deps.as_ref(), &env, &config.prism_launch_pool)?;
+    let locked_vested_prism_amount =
+        get_locked_vested_prism_amount(env.block.time.seconds(), &prism_vesting_schedules);
+
+    save_locked_vested_prism_amount(deps.storage, locked_vested_prism_amount)?;
+
     Ok(Response::new()
         .add_submessage(activate_xprism_boost(&config.prism_launch_pool)?) // needed only here
         .add_submessage(withdraw_rewards(&config.prism_launch_pool)?)
-        .add_attribute("action", "claim_virtual_rewards"))
+        .add_attribute("action", "claim_virtual_rewards")
+        .add_attribute("locked_vested_prism_balance", locked_vested_prism_amount))
 }
 
 fn activate_xprism_boost(launch_pool: &Addr) -> StdResult<SubMsg> {

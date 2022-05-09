@@ -8,7 +8,9 @@ use crate::error::ContractError;
 const CONFIG: Item<Config> = Item::new("config");
 pub const INST_CONFIG: Item<InstantiationConfig> = Item::new("inst_config");
 const STATE: Item<State> = Item::new("state");
-pub const PRISM_VESTING_STATE: Item<PrismVestingState> = Item::new("prism_vesting");
+const CLAIM_VIRTUAL_REWARDS_REPLY_CONTEXT: Item<ClaimVirtualRewardsReplyContext> =
+    Item::new("claim_virt_rewards_reply_ctx");
+const PRISM_VESTING_STATE: Item<PrismVestingState> = Item::new("prism_vesting_state");
 pub const GOVERNANCE_UPDATE: Item<GovernanceUpdateState> = Item::new("gov_update");
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
@@ -134,6 +136,44 @@ impl From<(u64, Uint128)> for PrismVestingSchedule {
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Default)]
 pub struct PrismVestingState {
-    pub balance_total: Uint128,
     pub schedules: Vec<PrismVestingSchedule>,
+}
+
+pub fn load_prism_vesting_schedules(store: &dyn Storage) -> StdResult<Vec<PrismVestingSchedule>> {
+    Ok(PRISM_VESTING_STATE.load(store)?.schedules)
+}
+
+pub fn may_load_prism_vesting_schedules(
+    store: &dyn Storage,
+) -> StdResult<Option<Vec<PrismVestingSchedule>>> {
+    Ok(PRISM_VESTING_STATE
+        .may_load(store)?
+        .map(|state| state.schedules))
+}
+
+pub fn save_prism_vesting_schedules(
+    store: &mut dyn Storage,
+    schedules: Vec<PrismVestingSchedule>,
+) -> StdResult<()> {
+    PRISM_VESTING_STATE.save(store, &PrismVestingState { schedules })
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Default)]
+pub struct ClaimVirtualRewardsReplyContext {
+    pub locked_vested_prism_amount: Uint128,
+}
+
+pub fn load_locked_vested_prism_amount(store: &dyn Storage) -> StdResult<Uint128> {
+    Ok(CLAIM_VIRTUAL_REWARDS_REPLY_CONTEXT
+        .load(store)?
+        .locked_vested_prism_amount)
+}
+
+pub fn save_locked_vested_prism_amount(store: &mut dyn Storage, amount: Uint128) -> StdResult<()> {
+    CLAIM_VIRTUAL_REWARDS_REPLY_CONTEXT.save(
+        store,
+        &ClaimVirtualRewardsReplyContext {
+            locked_vested_prism_amount: amount,
+        },
+    )
 }
