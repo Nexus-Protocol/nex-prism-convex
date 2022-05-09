@@ -201,12 +201,16 @@ pub fn withdraw(deps: DepsMut, env: Env) -> StdResult<Response> {
         &env.contract.address,
     );
 
-    let resp = Response::new().add_submessage(send(
-        &config.compounding_token,
-        &config.staking_contract,
-        compounding_token_balance,
-        &nexus_prism_protocol::staking::Cw20HookMsg::Bond {},
-    )?);
+    let resp = if compounding_token_balance.is_zero() {
+        Response::new()
+    } else {
+        Response::new().add_submessage(send(
+            &config.compounding_token,
+            &config.staking_contract,
+            compounding_token_balance,
+            &nexus_prism_protocol::staking::Cw20HookMsg::Bond {},
+        )?)
+    };
 
     if let Some(withdraw_action) = load_withdraw_action(deps.storage)? {
         remove_withdraw_action(deps.storage)?;
