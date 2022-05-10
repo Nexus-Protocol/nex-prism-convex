@@ -32,8 +32,7 @@ pub fn query_config(deps: Deps) -> StdResult<ConfigResponse> {
 pub fn query_state(deps: Deps) -> StdResult<StateResponse> {
     let config = load_config(deps.storage)?;
     let mut state = load_state(deps.storage)?;
-    state.staking_total_balance =
-        get_staking_total_balance(deps, config.stake_operator.clone(), &state)?;
+    state.staking_total_balance = get_staking_total_balance(deps, config.stake_operator, &state)?;
 
     Ok(StateResponse {
         staking_total_balance: state.staking_total_balance,
