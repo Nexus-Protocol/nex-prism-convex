@@ -88,14 +88,15 @@ pub fn update_config(
 
 pub fn update_global_index(deps: DepsMut, env: Env) -> Result<Response, ContractError> {
     let mut state = load_state(deps.storage)?;
+    let config = load_config(deps.storage)?;
+    state.staking_total_balance =
+        get_staking_total_balance(deps.as_ref(), config.stake_operator.clone(), &state)?;
 
     let resp = Response::new().add_attribute("action", "update_global_index");
 
     if state.staking_total_balance.is_zero() {
         return Ok(resp);
     }
-
-    let config = load_config(deps.storage)?;
 
     let virtual_claimed_rewards = calculate_global_index(
         state.virtual_reward_balance,
@@ -332,6 +333,12 @@ pub fn increase_balance(
         &address,
     )?;
 
+    //cause if so - we already have updated balance from StakeOperator
+    if config.with_stake_operator() {
+        staker.balance -= amount;
+        state.staking_total_balance -= amount;
+    }
+
     let real_rewards = calculate_decimal_rewards(
         state.real_rewards.global_index,
         staker.real_index,
@@ -350,11 +357,8 @@ pub fn increase_balance(
     staker.virtual_index = state.virtual_rewards.global_index;
     staker.virtual_pending_rewards = sum(virtual_rewards, staker.virtual_pending_rewards);
 
-    //cause if so - we already have updated balance from StakeOperator
-    if !config.with_stake_operator() {
-        staker.balance += amount;
-        state.staking_total_balance += amount;
-    }
+    staker.balance += amount;
+    state.staking_total_balance += amount;
 
     calculate_global_index(
         state.virtual_reward_balance,
@@ -396,6 +400,12 @@ pub fn decrease_balance(
         &address,
     )?;
 
+    //cause if so - we already have updated balance from StakeOperator
+    if config.with_stake_operator() {
+        staker.balance += amount;
+        state.staking_total_balance += amount;
+    }
+
     if !config.with_stake_operator() && staker.balance < amount {
         return Err(ContractError::NotEnoughTokens {
             name: config.staking_token.to_string(),
@@ -431,11 +441,8 @@ pub fn decrease_balance(
     staker.virtual_index = state.virtual_rewards.global_index;
     staker.virtual_pending_rewards = sum(virtual_rewards, staker.virtual_pending_rewards);
 
-    //cause if so - we already have updated balance from StakeOperator
-    if !config.with_stake_operator() {
-        staker.balance -= amount;
-        state.staking_total_balance -= amount;
-    }
+    staker.balance -= amount;
+    state.staking_total_balance -= amount;
 
     save_staker(deps.storage, &address, &staker)?;
     save_state(deps.storage, &state)?;
@@ -469,7 +476,7 @@ pub fn get_staking_total_balance(
         let s: StakeOperatorStateResponse = deps
             .querier
             .query_wasm_smart(stake_operator, &StakeOperatorQueryMsg::State {})?;
-        s.total_deposit
+        s.total_share
     } else {
         state.staking_total_balance
     })

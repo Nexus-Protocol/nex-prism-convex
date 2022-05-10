@@ -102,6 +102,14 @@ pub struct ConfigResponse {
 pub struct StateResponse {
     pub staking_total_balance: Uint128,
     pub virtual_reward_balance: Uint128,
+    pub virtual_rewards: RewardStateResponse,
+    pub real_rewards: RewardStateResponse,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+pub struct RewardStateResponse {
+    pub global_index: Decimal,
+    pub prev_balance: Uint128,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
@@ -137,7 +145,7 @@ pub enum StakeOperatorQueryMsg {
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema)]
 pub struct StakeOperatorStateResponse {
-    pub total_deposit: Uint128,
+    pub total_share: Uint128,
 }
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema)]
